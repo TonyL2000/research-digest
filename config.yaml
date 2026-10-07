@@ -1,0 +1,87 @@
+# research-digest configuration.
+#
+# Personal overrides go in config.local.yaml (gitignored): any top-level key there
+# replaces the same key here. DESIGN.md explains every default in this file.
+
+feeds:
+  # quota: the most candidates this feed may send to the model per run.
+  # announce_types: arXiv marks each entry new, cross, replace or replace-cross.
+  #   Replacements are old papers with a new version, so they are left out.
+  # plain_text: the summary is not HTML (arXiv abstracts contain "<" from mathematics).
+  # republish_summary: the feed's own text may appear in the public archive.
+  #   arXiv metadata is CC0; news teasers are copyrighted, so they stay out.
+  # fixture: file in fixtures/ that --dry-run reads instead of the network.
+  - name: arXiv quant-ph + optics
+    url: https://rss.arxiv.org/rss/quant-ph+physics.optics
+    quota: 100
+    announce_types: [new, cross]
+    plain_text: true
+    republish_summary: true
+    fixture: arxiv_quant-ph_optics.xml
+  - name: arXiv q-fin
+    url: https://rss.arxiv.org/rss/q-fin.PM+q-fin.ST
+    quota: 20
+    announce_types: [new, cross]
+    plain_text: true
+    republish_summary: true
+    fixture: arxiv_q-fin.xml
+  - name: APS Physics Magazine
+    url: https://feeds.aps.org/rss/recent/physics.xml
+    quota: 10
+    fixture: aps_physics.xml
+  - name: Physics World
+    url: https://physicsworld.com/feed/
+    quota: 10
+    fixture: physics_world.xml
+  - name: Quanta Magazine
+    url: https://www.quantamagazine.org/feed/
+    quota: 10
+    fixture: quanta.xml
+
+# What the reader cares about. Claude reads this paragraph; edit it freely.
+interests: >
+  Quantum optics, photon statistics and photon blockade, entangled-photon sources,
+  integrated photonics, quantum information theory, and factor investing.
+
+# Papers by these authors always make the digest. Keep the real list out of this public
+# file: put it in config.local.yaml, or in the WATCH_AUTHORS secret on GitHub
+# (names separated by semicolons).
+watch_authors: []
+
+# When a feed has more items than its quota, items mentioning these come first.
+# They only order the candidates; they never remove one.
+priority_keywords:
+  - quantum optics
+  - photon statistics
+  - photon blockade
+  - antibunching
+  - entangled photon
+  - photon pair
+  - single-photon
+  - integrated photonic
+  - quantum information
+  - factor investing
+  - factor model
+  - asset pricing
+
+# Hard filters, off by default. With include_keywords set, an item must contain at least
+# one of them (in its title or summary) to be considered at all.
+include_keywords: []
+exclude_keywords: []
+
+top_k: 10              # entries in the digest
+max_candidates: 150    # most items shown to the model in one call
+lookback_hours: 36     # ignore items older than this
+max_summary_chars: 600 # each abstract is cut to this length before the model sees it
+
+model: claude-haiku-5-5
+# US dollars per million tokens, used only for the cost estimate in the log. These are
+# the Claude Haiku 5.5 prices for prompts up to 100,000 tokens. Update them if you
+# change the model.
+pricing:
+  input_per_mtok: 0.10
+  output_per_mtok: 0.50
+
+# Folder URL of the public archive, used for the "full digest" link in WeChat messages.
+# Leave empty on GitHub Actions: it is worked out from the repository name.
+archive_url: ""
