@@ -1,0 +1,6 @@
+target-version = "py314"
+line-length = 100
+
+[lint]
+# E/W: style, F: pyflakes, I: import order, UP: modern syntax, B: likely bugs
+select = ["E", "W", "F", "I", "UP", "B"]
