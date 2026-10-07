@@ -1,0 +1,66 @@
+name: Daily digest
+
+on:
+  schedule:
+    # 12:17 UTC every day. arXiv publishes its daily batch at midnight US Eastern
+    # (04:00 or 05:00 UTC), so this is always after it. Not on the hour: GitHub says
+    # scheduled runs are most delayed at the start of each hour.
+    - cron: "17 12 * * *"
+  workflow_dispatch:
+
+# The job commits the archive and the seen store back to the repository.
+permissions:
+  contents: write
+
+# Never run two digests at once: they would both push to the same branch.
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install
+        # Wheels only: a missing wheel should fail fast, not compile from source.
+        run: |
+          python -m pip install --only-binary=:all: -r requirements.txt
+
+      - name: Run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+          # Optional. Unset secrets arrive as empty strings, which the code ignores.
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          WATCH_AUTHORS: ${{ secrets.WATCH_AUTHORS }}
+        run: python -m digest run
+
+      # The run writes the archive before it tries to deliver, so commit even when
+      # delivery failed and the step above exited non-zero.
+      - name: Commit archive and seen store
+        if: ${{ !cancelled() }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add digests data/seen.json
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+            exit 0
+          fi
+          git commit -m "digest: $(date -u +%F)"
+          git pull --rebase
+          git push
