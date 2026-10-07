@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture. The structure (RSS 1.0 / RDF) is copied from the APS Physics
+     Magazine feed; every title, name, link and sentence is invented. -->
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:syn="http://purl.org/rss/1.0/modules/syndication/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns="http://purl.org/rss/1.0/">
+  <channel rdf:about="http://aps.example.org/physics/">
+    <title>Recent Articles in Physics (synthetic)</title>
+    <link>http://aps.example.org/physics/</link>
+    <description>Synthetic fixture</description>
+    <dc:date>2026-10-07T15:16:37+00:00</dc:date>
+    <dc:language>en</dc:language>
+    <items>
+      <rdf:Seq>
+        <rdf:li rdf:resource="http://aps.example.org/doi/10.0000/Example.19.101"/>
+        <rdf:li rdf:resource="http://aps.example.org/doi/10.0000/Example.19.s55"/>
+        <rdf:li rdf:resource="http://aps.example.org/doi/10.0000/Example.19.s12"/>
+      </rdf:Seq>
+    </items>
+  </channel>
+  <item rdf:about="http://aps.example.org/doi/10.0000/Example.19.101">
+    <title>Single Photons Queue Up in a Silicon Ring</title>
+    <link>http://aps.example.org/doi/10.0000/Example.19.101</link>
+    <description>Author(s): Ada Example&lt;br/&gt;&lt;p&gt;A chip-scale resonator lets photons through one at a time, a signature of photon blockade.&lt;/p&gt;&lt;img src="https://aps.example.org/figure/1/thumb" width="200" height=\"100\"&gt;&lt;br/&gt;[Physics 19, 101] Published Wed Oct 07, 2026</description>
+    <dc:creator>Ada Example</dc:creator>
+    <dc:date>2026-10-07T10:00:00+00:00</dc:date>
+    <dc:subject>VIEWPOINTS</dc:subject>
+  </item>
+  <item rdf:about="http://aps.example.org/doi/10.0000/Example.19.s55">
+    <title>A Squeezed-Light Clock Ticks Past the Quantum Limit</title>
+    <link>http://aps.example.org/doi/10.0000/Example.19.s55</link>
+    <description>Author(s): Ben Sample&lt;br/&gt;&lt;p&gt;Researchers used squeezed light to reduce the noise of an optical clock below the standard quantum limit.&lt;/p&gt;&lt;img src="https://aps.example.org/figure/2/thumb" width="200" height=\"100\"&gt;&lt;br/&gt;[Physics 19, s55] Published Tue Oct 06, 2026</description>
+    <dc:creator>Ben Sample</dc:creator>
+    <dc:date>2026-10-06T10:00:00+00:00</dc:date>
+    <dc:subject>synopsis</dc:subject>
+  </item>
+  <item rdf:about="http://aps.example.org/doi/10.0000/Example.19.s12">
+    <title>An Old Synopsis That Is Outside the Lookback Window</title>
+    <link>http://aps.example.org/doi/10.0000/Example.19.s12</link>
+    <description>Author(s): Cy Placeholder&lt;br/&gt;&lt;p&gt;This entry is three weeks old and must be filtered out.&lt;/p&gt;&lt;br/&gt;[Physics 19, s12] Published Wed Sep 16, 2026</description>
+    <dc:creator>Cy Placeholder</dc:creator>
+    <dc:date>2026-09-16T10:00:00+00:00</dc:date>
+    <dc:subject>synopsis</dc:subject>
+  </item>
+</rdf:RDF>

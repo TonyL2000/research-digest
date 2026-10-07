@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic fixture. The structure (WordPress RSS 2.0) is copied from the Quanta
+     Magazine feed; every title, name, link and sentence is invented. -->
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:atom="http://www.w3.org/2005/Atom">
+
+<channel>
+	<title>Quanta Magazine (synthetic)</title>
+	<atom:link href="https://quanta.example.org/feed/" rel="self" type="application/rss+xml"></atom:link>
+	<link>https://quanta.example.org</link>
+	<description>Synthetic fixture</description>
+	<lastBuildDate>Wed, 07 Oct 2026 15:08:46 -0400</lastBuildDate>
+	<language>en-US</language>
+	<item>
+		<title>How a Quantum Network Survived a Citywide Blackout</title>
+		<link>https://quanta.example.org/how-a-quantum-network-survived-a-citywide-blackout-20261007/</link>
+		<pubDate>Wed, 07 Oct 2026 14:05:00 +0000</pubDate>
+		<dc:creator><![CDATA[Gil Narrator]]></dc:creator>
+		<category><![CDATA[Physics]]></category>
+		<guid isPermaLink="false">https://quanta.example.org/?p=2001</guid>
+		<description><![CDATA[When the grid failed, a metropolitan entanglement link kept running on backup power, and physicists learned something about robustness.            <p>The post <a href="https://quanta.example.org/how-a-quantum-network-survived-a-citywide-blackout-20261007/" target="_blank">How a Quantum Network Survived a Citywide Blackout</a> first appeared on <a href="https://quanta.example.org" target="_blank">Quanta Magazine</a></p>]]></description>
+	</item>
+	<item>
+		<title>The Statisticians Who Taught Markets to Doubt Their Factors</title>
+		<link>https://quanta.example.org/the-statisticians-who-taught-markets-to-doubt-their-factors-20261006/</link>
+		<pubDate>Tue, 06 Oct 2026 14:30:00 +0000</pubDate>
+		<dc:creator><![CDATA[Hana Columnist and Ivo Coauthor]]></dc:creator>
+		<category><![CDATA[Mathematics]]></category>
+		<guid isPermaLink="false">https://quanta.example.org/?p=2002</guid>
+		<description><![CDATA[Hundreds of published investment factors may be statistical mirages. A new multiple-testing framework explains which ones survive.            <p>The post <a href="https://quanta.example.org/the-statisticians-who-taught-markets-to-doubt-their-factors-20261006/" target="_blank">The Statisticians Who Taught Markets to Doubt Their Factors</a> first appeared on <a href="https://quanta.example.org" target="_blank">Quanta Magazine</a></p>]]></description>
+	</item>
+	<item>
+		<title>A September Story That Is Outside the Lookback Window</title>
+		<link>https://quanta.example.org/an-old-story-20260914/</link>
+		<pubDate>Mon, 14 Sep 2026 15:20:00 +0000</pubDate>
+		<dc:creator><![CDATA[Jo Archive]]></dc:creator>
+		<category><![CDATA[Physics]]></category>
+		<guid isPermaLink="false">https://quanta.example.org/?p=1900</guid>
+		<description><![CDATA[This entry is weeks old and must be filtered out.            <p>The post <a href="https://quanta.example.org/an-old-story-20260914/" target="_blank">A September Story That Is Outside the Lookback Window</a> first appeared on <a href="https://quanta.example.org" target="_blank">Quanta Magazine</a></p>]]></description>
+	</item>
+</channel>
+</rss>
