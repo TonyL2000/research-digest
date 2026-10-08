@@ -2,16 +2,17 @@
 
 A small Python tool that turns RSS feeds into a daily reading list.
 
-Once a day it fetches arXiv and physics-news feeds, removes what it has already shown
-you, and asks Claude, in a single API call, to pick the ten items that best match a
-paragraph describing your interests. The result arrives by email and as a WeChat
+Once a day it fetches arXiv and physics-news feeds, sets aside what it has already
+considered, and asks Claude, in a single API call, to pick the ten items that best match
+a paragraph describing your interests. The result is sent by email and as a WeChat
 message, and is committed to [`digests/`](digests/) as a Markdown file.
 
-It runs unattended on GitHub Actions. If the Claude call fails for any reason, you still
-get a digest: the newest items, marked "unranked".
+It is designed to run unattended on GitHub Actions. If the Claude call fails for any
+reason, a digest is still produced: items chosen by keyword and date, marked "unranked".
 
-**Status:** version 0.1. The test suite and the offline dry run pass. The first real
-digest will appear in [`digests/`](digests/) after the first scheduled run.
+**Status:** version 0.1. The test suite and the offline dry run pass. It has not run on
+GitHub yet; the first real digest will appear in [`digests/`](digests/) after the first
+scheduled run.
 
 ## How it works
 
@@ -19,62 +20,68 @@ digest will appear in [`digests/`](digests/) after the first scheduled run.
 flowchart LR
     CFG[config.yaml] --> F
     F["fetch<br/>(retries, skip failing feeds)"] --> N["normalize<br/>(clean URLs, strip HTML)"]
-    N --> D["dedup<br/>(seen.json, similar titles)"]
-    D --> P["prefilter<br/>(time window, keywords, cap)"]
-    P --> S{"select<br/>(one Claude call)"}
+    N --> FL["filter<br/>(seen.json, time window,<br/>types, keywords)"]
+    FL --> M["merge and cap<br/>(similar titles, per-feed quota)"]
+    M --> S{"select<br/>(one Claude call)"}
     S -- ok --> R["render<br/>(Markdown, HTML)"]
-    S -- any failure --> U["newest items,<br/>marked unranked"] --> R
+    S -- any failure --> U["unranked:<br/>by keyword and date"] --> R
     R --> A[("digests/DATE.md<br/>data/seen.json")]
     R --> E["email<br/>(SMTP + STARTTLS)"]
     R --> W["WeChat<br/>(ServerChan)"]
 ```
 
-Each box is one module in [`digest/`](digest/). [`digest/pipeline.py`](digest/pipeline.py)
-calls them in order and is the best place to start reading. [`DESIGN.md`](DESIGN.md)
-explains every decision, the alternatives, and how to switch to them.
+Each processing step is a module in [`digest/`](digest/).
+[`digest/pipeline.py`](digest/pipeline.py) calls them in order and is the best place to
+start reading. [`DESIGN.md`](DESIGN.md) explains the main decisions, the alternatives,
+and how to switch to them.
 
 ## Try it offline
 
-No API key, no network, nothing sent. Needs Python 3.14, the version the tests and the
-scheduled job run on.
+No API key, no network, nothing sent. You need Python 3.14, the only version this code
+has been run on.
+
+On Windows (PowerShell or cmd):
 
 ```bash
 python -m venv .venv
 ```
 
 ```bash
-.venv\Scripts\activate
-```
-
-(On macOS or Linux: `source .venv/bin/activate`.)
-
-```bash
-python -m pip install -r requirements-dev.txt
+.venv\Scripts\python -m pip install -r requirements-dev.txt
 ```
 
 ```bash
-python -m digest run --dry-run
+.venv\Scripts\python -m digest run --dry-run
 ```
-
-The dry run reads the recorded feeds in [`fixtures/`](fixtures/), uses a fake model that
-picks the first ten candidates, and writes three files to `out/`: the Markdown digest,
-`email.html` and `wechat.md`.
 
 ```bash
-python -m pytest
+.venv\Scripts\python -m pytest
 ```
+
+On macOS or Linux the same four commands are `python3.14 -m venv .venv` and then
+`.venv/bin/python -m ...`.
+
+The dry run takes the recorded and synthetic feeds in [`fixtures/`](fixtures/) through
+normalizing, filtering, merging, selection and rendering, with a fake model that picks
+the first ten candidates. It writes three files to `out/`: the Markdown digest,
+`email.html` and `wechat.md`. It does not fetch, deliver or touch the seen store; those
+parts are covered by the tests. It ignores `config.local.yaml`.
 
 ## Run it for real on your machine
 
 Set `ANTHROPIC_API_KEY` in your environment, then:
 
 ```bash
-python -m digest run --no-send
+.venv\Scripts\python -m digest run --no-send
 ```
 
-This fetches the live feeds, makes one Claude call (about one US cent, see
+This fetches the live feeds, makes one Claude call (under one US cent, see
 [Cost](#cost)), writes `digests/YYYY-MM-DD.md` and updates `data/seen.json`. Without
 `--no-send` it also delivers, using the environment variables listed below.
+
+Those two paths are the ones the scheduled job commits every day. Once the job is
+running, do not commit them from your machine: undo a local run with
+`git restore data/seen.json` and delete the new file in `digests/` before you pull.
 
 ## Configuration
 
@@ -85,8 +92,8 @@ likely to change:
 |---|---|---|
 | `interests` | a paragraph | What you care about. Claude reads this text as written. |
 | `feeds` | 2 arXiv feeds, 3 news feeds | Name, URL and a per-feed `quota` of candidates. |
-| `watch_authors` | empty | Papers by these authors always make the digest. |
-| `priority_keywords` | a short list | Decide which items go first when a feed exceeds its quota. |
+| `watch_authors` | empty | Papers by these authors always make the digest. Write full names. |
+| `priority_keywords` | a short list | Decide which items go first when a feed exceeds its quota, and in unranked digests. |
 | `top_k` | 10 | Entries in the digest. |
 | `max_candidates` | 150 | Most items shown to the model in one call. |
 | `lookback_hours` | 36 | Items older than this are ignored. |
@@ -103,7 +110,12 @@ top_k: 15
 
 ## Deploy on GitHub Actions
 
-1. Create the repository and push this code. With the GitHub CLI:
+These steps use the [GitHub CLI](https://cli.github.com). Install it and run
+`gh auth login` once. Without it, the same can be done on github.com: create an empty
+public repository, `git remote add origin <its URL>`, `git push -u origin main`, and add
+the secrets under Settings → Secrets and variables → Actions.
+
+1. Create the repository and push this code:
 
    ```bash
    gh repo create research-digest --public --source=. --push
@@ -119,13 +131,13 @@ top_k: 15
    | Secret | Needed for | Notes |
    |---|---|---|
    | `ANTHROPIC_API_KEY` | ranking | Without it every digest is unranked. |
-   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_TO` | email | Port 587 with STARTTLS. `SMTP_PORT` may be left unset (587). Gmail needs an app password, not your account password. |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_TO` | email | Port 587 with STARTTLS. `SMTP_PORT` may be left unset (587). Gmail needs an app password, not your account password. `MAIL_TO` may hold several addresses separated by commas. |
    | `SERVERCHAN_SENDKEY` | WeChat | Must be a ServerChan **Turbo** key (starts with `SCT`). See below. |
    | `MAIL_FROM` | optional | Sender address, if it differs from `SMTP_USER`. |
    | `WATCH_AUTHORS` | optional | Private watch list, names separated by semicolons. |
 
-   A channel whose secrets are missing is skipped. The job fails only if every
-   configured channel fails.
+   A channel whose secrets are missing is skipped. The job fails if every feed fails or
+   if every configured channel fails.
 
 3. Trigger a first run and watch it:
 
@@ -137,14 +149,15 @@ top_k: 15
    gh run watch
    ```
 
-After that, [`daily.yml`](.github/workflows/daily.yml) runs every day at about 12:17 UTC
-and commits the new digest and `data/seen.json` as `github-actions[bot]`.
+After that, [`daily.yml`](.github/workflows/daily.yml) is scheduled for about 12:17 UTC
+every day and commits the new digest and `data/seen.json` as `github-actions[bot]`.
 [`ci.yml`](.github/workflows/ci.yml) runs the linter and the tests on every push and pull
 request.
 
 ### About the WeChat channel
 
-Messages go through [ServerChan](https://sct.ftqq.com), a third-party relay.
+Messages go through [ServerChan](https://sct.ftqq.com), a third-party relay. What
+follows is from its documentation; nothing has been sent through it yet.
 
 - Use a Turbo key (`SCT...`). ServerChan's other product has keys starting with `sctp`
   and delivers to its own phone app, not to WeChat. The code refuses those keys.
@@ -159,11 +172,11 @@ Messages go through [ServerChan](https://sct.ftqq.com), a third-party relay.
 ### Scheduled runs can stop
 
 - **The 60-day rule.** In public repositories GitHub disables scheduled workflows after
-  60 days without repository activity. This project commits a digest on most days, and
-  in other public repositories such bot commits have kept schedules alive, but GitHub
-  does not document what counts as activity. If the Actions tab says "This scheduled
-  workflow is disabled because there hasn't been activity in this repository for at
-  least 60 days", click **Enable workflow**, or run:
+  60 days without repository activity. This project is expected to commit a digest on
+  most days, and in other public repositories such bot commits have kept schedules
+  alive, but GitHub does not document what counts as activity. If the Actions tab says
+  "This scheduled workflow is disabled because there hasn't been activity in this
+  repository for at least 60 days", click **Enable workflow**, or run:
 
   ```bash
   gh workflow enable daily.yml
@@ -182,8 +195,9 @@ pricing page, October 2026).
 
 A full day's snapshot of the five feeds produced 114 candidates and a prompt of about
 91,000 characters, roughly 23,000 to 37,000 tokens. With a few thousand output tokens
-that is **well under one US cent per run**, a few dollars a year. This is an estimate:
-every run logs its real token counts and cost, and prints them in the digest footer.
+that is **under one US cent per run**, a few dollars a year. This is an estimate from an
+offline run. Each run that gets a reply logs its real token counts and an estimated
+cost, and prints them in the digest footer.
 
 Nothing else costs money. GitHub Actions is free for public repositories and ServerChan
 has a free plan.
@@ -193,13 +207,18 @@ has a free plan.
 - arXiv's RSS feed has no history. A day on which the job does not run is not caught up.
 - On weekends and arXiv holidays the arXiv feeds are empty. If nothing at all is new,
   the job makes no API call and sends nothing.
-- Email uses STARTTLS (usually port 587). Servers that only accept implicit TLS on port
-  465 are not supported.
+- An unranked digest is a rough substitute: ten items picked by keyword and date, and
+  news items appear as title and link only.
+- The watch list is not named anywhere, but a careful reader of a public archive could
+  infer it over time. See [DESIGN.md](DESIGN.md#8-watched-authors).
+- Email uses STARTTLS (usually port 587). Servers that only accept port 465 need a
+  two-line change described in DESIGN.md.
 - The plain-text part of the email is the Markdown digest, escape codes included. Mail
   clients show the HTML part.
 - A story is recognised as a repeat only if its URL is the same, or if two feeds publish
   it under nearly the same title within the same run.
 - Author names appear as arXiv writes them, including TeX accents such as `\'e`.
+- Web addresses inside an abstract are shown as text, and GitHub makes them clickable.
 - ServerChan reports "accepted", not "delivered to WeChat". A muted or unfollowed
   service account will not be noticed.
 - Summaries are written by a language model from a title and an abstract. They can be
@@ -207,26 +226,27 @@ has a free plan.
 
 ## Prior art
 
-Daily paper digests are a well-populated category. About fifteen existing projects were
-surveyed before this one was written. Ideas were borrowed; no code was copied.
+Daily paper digests are a well-populated category. Eight existing projects were read
+before this one was written; [DESIGN.md](DESIGN.md#2-build-or-reuse) lists them with
+their licences and how they call the model. Ideas were borrowed, for example reading
+everything from the arXiv RSS feed and filtering by announce type, as
+[zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily) and
+[gpt_paper_assistant](https://github.com/tatsu-lab/gpt_paper_assistant) do. No code was
+copied.
 
-- [zotero-arxiv-daily](https://github.com/TideDra/zotero-arxiv-daily) and
-  [gpt_paper_assistant](https://github.com/tatsu-lab/gpt_paper_assistant): read
-  everything from the arXiv RSS feed, and filter by announce type.
-- Several small digest projects keep a seen-URL file with an expiry date.
-- Two of the surveyed projects name Claude models that have since been retired. Here
-  the model is one line in `config.yaml`.
+## How this was built
 
-None of the surveyed projects had all of the following, which is what this one adds: a
-single structured-output call instead of one call per paper, a fallback for every way
-that call can fail, and a dry run that exercises the whole pipeline offline.
+From a written specification, with [Claude Code](https://claude.com/claude-code) as the
+programming assistant. The commits carry a `Co-Authored-By` line saying so.
 
 ## Project layout
 
 | Path | What it does |
 |---|---|
 | `digest/pipeline.py` | The whole run, top to bottom |
+| `digest/__main__.py` | Command line: `python -m digest run [--dry-run] [--no-send]` |
 | `digest/config.py` | Loads and validates `config.yaml` |
+| `digest/models.py` | The data shapes passed between steps |
 | `digest/fetch.py` | Downloads feeds with timeouts and retries |
 | `digest/normalize.py` | Feed entry to `Item`: canonical URL, plain-text summary |
 | `digest/dedup.py` | Seen store and near-duplicate titles |
@@ -235,8 +255,8 @@ that call can fail, and a dry run that exercises the whole pipeline offline.
 | `digest/render.py` | Markdown, HTML and the WeChat body |
 | `digest/deliver.py` | Email and WeChat, isolated from each other |
 | `digest/dryrun.py` | Recorded feeds and a fake model for `--dry-run` |
-| `fixtures/` | Feeds used by the dry run and the tests |
-| `tests/` | Offline tests, one file per module |
+| `fixtures/` | Recorded and synthetic feeds for the dry run and the tests |
+| `tests/` | Offline tests |
 
 ## License
 
