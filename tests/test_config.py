@@ -70,6 +70,8 @@ def test_local_file_can_be_ignored(tmp_path):
     "extra",
     [
         "top_k: 0\n",
+        "max_candidates: 0\n",
+        "feeds:\n  - {name: A, url: 'https://example.org/1', quota: -1}\n",
         "max_summary_chars: 5\n",
         "lookback_hours: -1\n",
         "feeds:\n  - {name: Same, url: 'https://example.org/1'}\n  - {name: Same, url: 'https://example.org/2'}\n",

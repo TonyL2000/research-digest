@@ -29,8 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # force=True: the Anthropic SDK installs its own log handler when ANTHROPIC_LOG is
+    # set, and without it this call would then do nothing.
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        force=True,
     )
 
     if args.dry_run:

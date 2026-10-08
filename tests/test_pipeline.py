@@ -70,6 +70,12 @@ def test_cli_dry_run_is_offline_and_writes_to_out(tmp_path, monkeypatch, no_netw
     assert cli.main(["run", "--dry-run"]) == 0  # a second dry run overwrites, no "-2" file
     assert len(list(out.iterdir())) == 3
 
+    # Private settings must not change a dry run: watching an author would otherwise
+    # force that paper into the digest.
+    monkeypatch.setenv("WATCH_AUTHORS", "Kaisa Laiho; Anjali Thawait")
+    assert cli.main(["run", "--dry-run"]) == 0
+    assert (out / "2026-10-07.md").read_text(encoding="utf-8") == markdown
+
 
 def test_pipeline_filters_merges_and_archives(tmp_path):
     picker = FakeClient()
@@ -246,7 +252,12 @@ def test_every_feed_failing_to_parse_is_an_error(tmp_path, monkeypatch):
 def test_an_unranked_run_uses_up_only_what_it_showed(tmp_path):
     seen_path = tmp_path / "data" / "seen.json"
     assert run_fixtures(tmp_path, client=FakeClient(model_reply(None, "refusal"))) == 0
-    assert len(SeenStore.load(seen_path).entries) == 10  # top_k, not all 26 eligible items
+    # the ten items shown, plus the Quanta copy of a story that was shown from Physics World
+    seen = SeenStore.load(seen_path)
+    assert len(seen.entries) == 11
+    assert seen.contains(
+        "https://quanta.example.org/how-a-quantum-network-survived-a-citywide-blackout-20261007"
+    )
 
     # The same day, once the model works again: the other items are still there to rank.
     assert run_fixtures(tmp_path) == 0
@@ -255,3 +266,40 @@ def test_an_unranked_run_uses_up_only_what_it_showed(tmp_path):
     second = (tmp_path / "digests" / "2026-10-07-2.md").read_text(encoding="utf-8")
     assert "Unranked" not in second
     assert len(SeenStore.load(seen_path).entries) == 26
+
+
+def test_old_entries_are_pruned_from_the_seen_store_on_each_run(tmp_path):
+    seen_path = tmp_path / "data" / "seen.json"
+    old = SeenStore()
+    old.add(["https://example.org/long-ago"], FIXTURE_NOW.date() - timedelta(days=90))
+    old.save(seen_path)
+    assert run_fixtures(tmp_path) == 0
+    assert not SeenStore.load(seen_path).contains("https://example.org/long-ago")
+
+
+def test_watch_list_reaches_the_prompt_and_the_digest(tmp_path):
+    picker = FakeClient(model_reply([make_pick("placeholder")]))
+
+    def answer(**kwargs):
+        picker.calls.append(kwargs)
+        return DryRunClient.messages.parse(**kwargs)
+
+    picker.parse = answer
+    config = repo_config()
+    config.watch_authors = ["Anjali Thawait"]  # author of a replaced q-fin paper: not eligible
+    config.watch_authors.append("Carmine Ventre")  # co-author of a new q-fin paper
+    code = run(
+        config,
+        now=FIXTURE_NOW,
+        raw=read_fixtures(config.feeds),
+        client=picker,
+        seen_path=None,
+        archive_dir=tmp_path,
+        send=False,
+        env={},
+    )
+    assert code == 0
+    prompt = picker.calls[0]["messages"][0]["content"]
+    data = prompt.split("</candidates>")[0]  # the instructions mention the flag as well
+    assert data.count('"must_include": true') == 1
+    assert "FactorBench" in (tmp_path / "2026-10-07.md").read_text(encoding="utf-8")

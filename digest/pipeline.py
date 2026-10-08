@@ -7,7 +7,7 @@ from pathlib import Path
 
 from digest import deliver as channels
 from digest.config import Config, archive_url
-from digest.dedup import SeenStore, merge_duplicates
+from digest.dedup import SeenStore, is_duplicate, merge_duplicates
 from digest.models import Digest
 from digest.normalize import parse_feed
 from digest.prefilter import cap, keep_announce_types, keyword_filter, mark_watched, within_lookback
@@ -97,9 +97,13 @@ def run(
     log.info("wrote %s (%d entries, ranked=%s)", archive, len(digest.entries), digest.ranked)
     if seen_path:
         # A ranked run uses up everything that was eligible: each item gets one chance.
-        # An unranked run uses up only what it showed, so that a second run the same day,
-        # once the model works again, can still rank the rest.
-        used = eligible if digest.ranked else [entry.item for entry in digest.entries]
+        # An unranked run uses up only what it showed (and the copies of those stories
+        # from other feeds), so that a second run the same day, once the model works
+        # again, can still rank the rest.
+        used = eligible
+        if not digest.ranked:
+            shown = [entry.item for entry in digest.entries]
+            used = [item for item in eligible if any(is_duplicate(s, item) for s in shown)]
         seen.add((item.url for item in used), now.date())
         seen.prune(now.date())
         seen.save(seen_path)
