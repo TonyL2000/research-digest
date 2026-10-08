@@ -53,6 +53,7 @@ def test_markdown_groups_by_first_tag_best_first():
     assert "### [Photon blockade in a ring](https://arxiv.org/abs/2610.00001)" in text
     assert "arXiv · A. Author, B. Author · score 5/5 · also in Physics World" in text
     assert "**Why it matters:** It is on topic." in text
+    assert "**Summary:** Summary." in text
     assert "Unranked" not in text
 
 
@@ -91,7 +92,7 @@ def test_html_escapes_everything():
     text = render_html(hostile_digest())
     assert "<script>" not in text and "<img" not in text and "<b>" not in text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
-    assert 'href="https://example.org/a(b)?q=%22x%22&amp;r=1"' in text
+    assert 'href="https://example.org/a(b)?q=&quot;x&quot;&amp;r=1"' in text
     assert text.count("<a ") == 1  # only the entry's own link
 
 
@@ -103,6 +104,7 @@ def test_html_has_the_same_structure_as_markdown():
         '<h3><a href="https://arxiv.org/abs/2610.00001">Photon blockade in a ring</a></h3>' in text
     )
     assert "<strong>Why it matters:</strong> It is on topic." in text
+    assert "<p><strong>Summary:</strong> Summary.</p>" in text
 
 
 def test_unranked_digest_says_so_everywhere():
@@ -144,3 +146,27 @@ def test_wechat_body_is_truncated_by_whole_entries():
     assert len(json.dumps(text)) <= WECHAT_BODY_LIMIT
     assert f"(+{60 - shown} more items not shown here. Full digest: {link})" in text
     assert text.rstrip().endswith(")")  # the note is the last thing; no entry is cut in half
+
+
+def test_untrusted_text_never_starts_a_markdown_line():
+    # At the start of a line these would become a code block, a heading, a list, a rule.
+    for opening in ("``` fence", "# heading", "- bullet", "1. item", "---"):
+        item = make_item("Title", "https://example.org/x")
+        entry = make_entry(item, why_it_matters=opening, summary=opening)
+        text = render_markdown(sample_digest(entries=[entry])) + render_wechat(
+            sample_digest(entries=[entry])
+        )
+        # (the renderer's own "---" rule above the footer does not count)
+        lines_with_it = [line for line in text.splitlines() if opening in line and line != "---"]
+        assert len(lines_with_it) == 4
+        assert all(line.startswith("**") for line in lines_with_it)
+
+
+def test_a_backslash_cannot_cancel_the_escaping():
+    item = make_item("Ends with a backslash \\", "https://example.org/<h1>BIG</h1>?q=`x`\\")
+    text = render_markdown(sample_digest(entries=[make_entry(item)]))
+    assert (
+        "### [Ends with a backslash &#92;](https://example.org/%3Ch1%3EBIG%3C/h1%3E?q=%60x%60%5C)"
+        in text
+    )
+    assert "<h1>" not in text

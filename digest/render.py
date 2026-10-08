@@ -6,6 +6,7 @@ Links always come from the feed entry, never from the model.
 
 import html
 import json
+from urllib.parse import quote
 
 from digest.models import Digest, Entry
 from digest.normalize import truncate
@@ -18,12 +19,17 @@ WECHAT_BODY_LIMIT = 30_000
 
 
 def md(text: str) -> str:
-    """Escape text for Markdown: no HTML, and no brackets that could start a link or image."""
-    return html.escape(text, quote=False).replace("[", "&#91;").replace("]", "&#93;")
+    """Escape text for Markdown. HTML characters, square brackets and backslashes become
+    character codes, so the text cannot form a tag, a link or an image, and cannot
+    cancel the escaping of a neighbouring character."""
+    text = html.escape(text, quote=False)
+    return text.replace("[", "&#91;").replace("]", "&#93;").replace("\\", "&#92;")
 
 
 def md_link(title: str, url: str) -> str:
-    safe_url = url.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
+    # Percent-encode everything that could end the link early or start markup:
+    # parentheses, spaces, quotes, angle brackets, backslashes.
+    safe_url = quote(url, safe=":/?#@!$&'*+,;=%~")
     return f"[{md(title)}]({safe_url})"
 
 
@@ -52,7 +58,7 @@ def meta_parts(entry: Entry) -> list[str]:
 def unranked_note(digest: Digest) -> str:
     return (
         f"Unranked: the model step did not complete ({digest.fallback_reason}). "
-        "These are the newest items, without the model's ranking or summaries."
+        "These items were picked by keyword and date, without the model's ranking or summaries."
     )
 
 
@@ -84,10 +90,12 @@ def subject(digest: Digest) -> str:
 def entry_markdown(entry: Entry, level: str = "###") -> str:
     lines = [f"{level} {md_link(entry.item.title, entry.item.url)}"]
     lines.append(md(" · ".join(meta_parts(entry))))
+    # Untrusted text never starts a line: there "#", "-" or three backticks would turn
+    # it into a heading, a list or a code block. A bold label in front prevents that.
     if entry.why_it_matters:
         lines.append(f"**Why it matters:** {md(entry.why_it_matters)}")
     if entry.summary:
-        lines.append(md(entry.summary))
+        lines.append(f"**Summary:** {md(entry.summary)}")
     return "\n\n".join(lines)
 
 
@@ -120,7 +128,7 @@ def render_html(digest: Digest) -> str:
             if entry.why_it_matters:
                 out.append(f"<p><strong>Why it matters:</strong> {esc(entry.why_it_matters)}</p>")
             if entry.summary:
-                out.append(f"<p>{esc(entry.summary)}</p>")
+                out.append(f"<p><strong>Summary:</strong> {esc(entry.summary)}</p>")
     out.append(f'<hr><p style="color: #777; font-size: 12px;">{esc(footer(digest))}</p>')
     out.append("</body></html>")
     return "\n".join(out) + "\n"
