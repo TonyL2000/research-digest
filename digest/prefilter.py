@@ -1,5 +1,6 @@
 """Cheap filters that run before the Claude call. None of them costs API money."""
 
+import re
 from datetime import datetime, timedelta
 
 from digest.config import Feed
@@ -8,11 +9,17 @@ from digest.models import Item
 
 def mark_watched(items: list[Item], watch_authors: list[str]) -> None:
     """Flag items with a watched author. The author field is one string (arXiv joins
-    names with commas, and affiliations contain commas too), so match by substring."""
-    names = [name.casefold() for name in watch_authors if name.strip()]
+    names with commas, and affiliations contain commas too), so search inside it."""
+    # A name must match whole words: "Wei Li" must not match "Wei Liang". The pattern
+    # says "not preceded and not followed by a letter or digit".
+    patterns = [
+        re.compile(rf"(?<!\w){re.escape(name.strip().casefold())}(?!\w)")
+        for name in watch_authors
+        if name.strip()
+    ]
     for item in items:
         authors = item.authors.casefold()
-        item.watched = any(name in authors for name in names)
+        item.watched = any(pattern.search(authors) for pattern in patterns)
 
 
 def within_lookback(items: list[Item], now: datetime, hours: int) -> list[Item]:
@@ -33,6 +40,12 @@ def keep_announce_types(items: list[Item], feeds: list[Feed]) -> list[Item]:
 
 def _text(item: Item) -> str:
     return f"{item.title} {item.summary}".casefold()
+
+
+def keyword_hits(item: Item, keywords: list[str]) -> int:
+    """How many of the keywords appear in the item's title or summary."""
+    text = _text(item)
+    return sum(word.casefold() in text for word in keywords)
 
 
 def keyword_filter(items: list[Item], include: list[str], exclude: list[str]) -> list[Item]:
@@ -57,13 +70,11 @@ def cap(
 
     Returns the candidates and the number of items left out.
     """
-    keywords = [word.casefold() for word in priority_keywords]
 
     def rank(item: Item) -> tuple:
         # Sorted ascending: more keyword hits first, then newest. arXiv items share one
         # timestamp, so among them the keyword count and the feed's own order decide.
-        hits = sum(word in _text(item) for word in keywords)
-        return (-hits, -item.published.timestamp())
+        return (-keyword_hits(item, priority_keywords), -item.published.timestamp())
 
     chosen: list[Item] = []
     for feed in feeds:

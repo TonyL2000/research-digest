@@ -78,7 +78,14 @@ def test_ranked_selection():
     picks = [
         make_pick(items[0].id, 3),
         make_pick(items[3].id, 5, tags=["Quantum Optics", " ", "b", "c", "d"]),
-        make_pick(items[1].id, 4, summary="Read https://evil.example.org/x now.\n\nReally."),
+        make_pick(
+            items[1].id,
+            4,
+            summary=(
+                "Read https://evil.example.org/x www.evil.example.org "
+                "HTTPS://EVIL.EXAMPLE/y now.\n\nReally."
+            ),
+        ),
     ]
     client = FakeClient(model_reply(picks))
     result = select(client, items, make_config(top_k=2))
@@ -166,3 +173,28 @@ def test_fallback_puts_watched_authors_first():
 def test_no_client_without_an_api_key():
     assert make_client({}) is None
     assert make_client({"ANTHROPIC_API_KEY": "  "}) is None  # unset GitHub secrets are empty
+
+
+def test_a_watched_pick_below_the_cut_keeps_the_models_text():
+    items = candidates()
+    items[0].watched = True
+    picks = [make_pick(items[3].id, 5), make_pick(items[0].id, 2, summary="Model summary.")]
+    result = select(FakeClient(model_reply(picks)), items, make_config(top_k=1))
+    assert [entry.item.title for entry in result.entries] == ["News", "Oldest"]
+    assert result.entries[1].score == 2
+    assert result.entries[1].summary == "Model summary."
+
+
+def test_fallback_prefers_priority_keywords_over_recency():
+    items = candidates()
+    items[0].summary = "A study of photon blockade."  # the oldest item
+    config = make_config(top_k=2, priority_keywords=["Photon Blockade"])
+    result = select(None, items, config)
+    assert [entry.item.title for entry in result.entries] == ["Oldest", "News"]
+
+
+def test_a_reply_without_usage_falls_back_instead_of_crashing():
+    reply = model_reply([make_pick(candidates()[0].id)])
+    reply.usage = None
+    result = select(FakeClient(reply), candidates(), make_config())
+    assert "AttributeError" in result.fallback_reason

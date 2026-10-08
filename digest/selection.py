@@ -9,16 +9,18 @@ import re
 from collections.abc import Mapping
 
 import anthropic
+from pydantic import ValidationError
 
 from digest.config import Config
 from digest.models import Entry, Item, Selection, SelectResult, Usage
 from digest.normalize import squeeze, truncate
+from digest.prefilter import keyword_hits
 
 log = logging.getLogger(__name__)
 
 MAX_TOKENS = 16000  # generous: on recent models thinking tokens count toward this limit
 REQUEST_TIMEOUT_SECONDS = 120.0
-MAX_RETRIES = 2  # done by the SDK, with backoff, on timeouts, 429 and 5xx
+MAX_RETRIES = 2  # done by the SDK, with backoff: connection errors, 408, 409, 429, 5xx
 AUTHOR_CHARS = 200  # some collaborations list hundreds of authors
 WHY_CHARS = 300
 SUMMARY_CHARS = 800
@@ -86,7 +88,7 @@ def build_prompt(candidates: list[Item], config: Config) -> tuple[str, str]:
 
 
 def select(client, candidates: list[Item], config: Config) -> SelectResult:
-    """One Claude call. Falls back to the newest items if the answer cannot be used."""
+    """One Claude call. Falls back to an unranked digest if the answer cannot be used."""
     if client is None:
         return fallback(candidates, config, "no Claude client (is ANTHROPIC_API_KEY set?)")
     system, user = build_prompt(candidates, config)
@@ -98,14 +100,19 @@ def select(client, candidates: list[Item], config: Config) -> SelectResult:
             messages=[{"role": "user", "content": user}],
             output_format=Selection,
         )
+        usage = measure(response, config)
+    except ValidationError:
+        # Raised inside the SDK when the reply does not fit Selection, typically because
+        # it was cut off. The response object never reaches us, so the tokens that were
+        # billed for it cannot be logged here.
+        reason = "the reply was cut off or did not fit the schema (ValidationError)"
+        return fallback(candidates, config, reason)
     except Exception as exc:
-        # Deliberately broad. The usual causes are anthropic.APIError (network, rate
-        # limit, bad key) and pydantic.ValidationError (the reply was cut off or did not
-        # fit Selection), but whatever happens here must not cost the day's digest. The
+        # Deliberately broad. The usual cause is anthropic.APIError (network, rate limit,
+        # bad key), but whatever happens here must not cost the day's digest. The
         # exception type is shown in the digest, so a persistent problem stays visible.
         return fallback(candidates, config, f"model call failed ({type(exc).__name__})")
 
-    usage = measure(response, config)
     if response.stop_reason in ("refusal", "max_tokens"):
         return fallback(candidates, config, f"stop_reason={response.stop_reason}", usage)
     problem = check(response.parsed_output, candidates)
@@ -113,7 +120,9 @@ def select(client, candidates: list[Item], config: Config) -> SelectResult:
         return fallback(candidates, config, problem, usage)
 
     by_id = {item.id: item for item in candidates}
-    picks = sorted(response.parsed_output.picks, key=lambda pick: -pick.score)[: config.top_k]
+    ranked = sorted(response.parsed_output.picks, key=lambda pick: -pick.score)
+    # The best top_k, plus any watched author's paper the model ranked below the cut.
+    picks = ranked[: config.top_k] + [p for p in ranked[config.top_k :] if by_id[p.id].watched]
     entries = [
         Entry(
             item=by_id[pick.id],
@@ -124,7 +133,8 @@ def select(client, candidates: list[Item], config: Config) -> SelectResult:
         )
         for pick in picks
     ]
-    # "Watched authors always make the digest" must not depend on the model obeying.
+    # "Watched authors always make the digest" must not depend on the model obeying: add
+    # the ones it left out. They have no score and no model text, so a reader can tell.
     picked = {entry.item.id for entry in entries}
     entries += [
         own_entry(item, config) for item in candidates if item.watched and item.id not in picked
@@ -148,7 +158,7 @@ def check(selection: Selection | None, candidates: list[Item]) -> str:
 
 def tidy(text: str, limit: int) -> str:
     """Model text is only ever displayed. It supplies no links: drop any URL it wrote."""
-    return truncate(squeeze(re.sub(r"https?://\S+", "", text)), limit)
+    return truncate(squeeze(re.sub(r"(?i)\b(?:https?://|www\.)\S+", "", text)), limit)
 
 
 def tidy_tags(tags: list[str]) -> list[str]:
@@ -168,10 +178,16 @@ def own_entry(item: Item, config: Config) -> Entry:
 def fallback(
     candidates: list[Item], config: Config, reason: str, usage: Usage | None = None
 ) -> SelectResult:
-    """The newest top_k candidates with their own summaries; watched authors first."""
+    """A digest without the model: top_k candidates, each with the feed's own summary
+    where that may be republished. Watched authors first, then the items that mention
+    the most priority keywords, then the newest."""
     log.warning("unranked digest: %s", reason)
-    newest = sorted(candidates, key=lambda item: (not item.watched, -item.published.timestamp()))
-    entries = [own_entry(item, config) for item in newest[: config.top_k]]
+
+    def order(item: Item) -> tuple:
+        hits = keyword_hits(item, config.priority_keywords)
+        return (not item.watched, -hits, -item.published.timestamp())
+
+    entries = [own_entry(item, config) for item in sorted(candidates, key=order)[: config.top_k]]
     return SelectResult(entries=entries, usage=usage, fallback_reason=reason)
 
 

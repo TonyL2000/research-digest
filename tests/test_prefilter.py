@@ -108,3 +108,18 @@ def test_global_limit_keeps_watched_first_then_newest():
     candidates, left_out = cap([*older, newer], feeds, [], 2)
     assert candidates == [older[2], newer]
     assert left_out == 2
+
+
+def test_watched_names_match_whole_names_only():
+    authors = [
+        "Wei Li",
+        "Wei Liang",
+        "Xiaowei Liu",
+        "A. Other, Wei Li (Some University, City), B. Third",
+        "J. Doe Jr., K. Roe",
+    ]
+    items = [
+        make_item(str(n), f"https://example.org/{n}", authors=a) for n, a in enumerate(authors)
+    ]
+    mark_watched(items, ["wei li", "J. Doe Jr."])
+    assert [item.watched for item in items] == [True, False, False, True, True]
