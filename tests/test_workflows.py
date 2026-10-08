@@ -25,6 +25,11 @@ def test_daily_workflow():
 
     job = workflow["jobs"]["digest"]
     assert job["timeout-minutes"] <= 30
+    # the newest commit on the branch, so a queued or re-run job sees the latest seen store
+    assert job["steps"][0] == {
+        "uses": "actions/checkout@v7",
+        "with": {"ref": "${{ github.ref_name }}"},
+    }
     run_step, commit_step = job["steps"][-2:]
     assert run_step["run"] == "python -m digest run"
     assert set(run_step["env"]) >= {

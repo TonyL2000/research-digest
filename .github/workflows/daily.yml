@@ -22,7 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Check out the newest commit on the branch, not the commit from the moment the run
+      # was queued. A run that waited (or was re-run later) would otherwise start from an
+      # old data/seen.json and send yesterday's digest again.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
 
       - uses: actions/setup-python@v7
         with:
