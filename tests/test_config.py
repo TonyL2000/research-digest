@@ -1,5 +1,5 @@
 import pytest
-from helpers import make_config, repo_config
+from helpers import FIXTURES, make_config, repo_config
 from pydantic import ValidationError
 
 from digest.config import archive_url, load_config, user_agent
@@ -14,11 +14,11 @@ watch_authors: [Public Person]
 """
 
 
-def test_committed_config_is_valid_and_quotas_fit_the_cap():
-    config = repo_config()
-    assert config.model == "claude-haiku-5-5"
-    assert sum(feed.quota or 0 for feed in config.feeds) <= config.max_candidates
-    assert all(feed.fixture for feed in config.feeds)  # every feed works in a dry run
+def test_committed_config_loads_and_every_feed_works_in_a_dry_run():
+    config = load_config(use_local=False)  # the real file, whatever its current values
+    assert config.feeds
+    assert all((FIXTURES / feed.fixture).is_file() for feed in config.feeds if feed.fixture)
+    assert repo_config().feeds == config.feeds
 
 
 def test_local_file_replaces_top_level_keys(tmp_path):

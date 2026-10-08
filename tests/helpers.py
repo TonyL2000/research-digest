@@ -39,8 +39,22 @@ def make_config(**fields) -> Config:
 
 
 def repo_config() -> Config:
-    """The committed config.yaml, without any config.local.yaml on this machine."""
-    return Config(**yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8")))
+    """The feeds from the committed config.yaml, with the settings a user is expected to
+    edit pinned to fixed values, so that changing top_k, the model or the interests in
+    config.yaml does not break the tests. config.local.yaml is not read."""
+    data = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
+    data.update(
+        interests="quantum optics and factor investing",
+        watch_authors=[],
+        include_keywords=[],
+        exclude_keywords=[],
+        top_k=10,
+        max_candidates=150,
+        lookback_hours=36,
+        max_summary_chars=600,
+        model="claude-haiku-5-5",
+    )
+    return Config(**data)
 
 
 def make_entry(item: Item, **fields) -> Entry:

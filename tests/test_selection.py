@@ -140,7 +140,7 @@ def connection_error() -> Exception:
         (FakeClient(model_reply([make_pick("not-a-candidate")])), "not a candidate"),
     ],
 )
-def test_fallback_is_newest_top_k_with_own_summaries(client, reason):
+def test_every_failure_gives_an_unranked_digest_with_own_summaries(client, reason):
     result = select(client, candidates(), make_config(top_k=3))
     assert reason in result.fallback_reason
     assert [entry.item.title for entry in result.entries] == ["News", "Newest", "Middle"]
