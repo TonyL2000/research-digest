@@ -102,3 +102,14 @@ def test_an_undecodable_body_skips_only_that_feed(caplog):
     raw, _, _ = run(handler, feeds=(BAD, GOOD))
     assert raw == {"Good": FEED}
     assert "DecodingError" in caplog.text
+
+
+def test_a_redirect_to_a_malformed_address_skips_only_that_feed(caplog):
+    def handler(request, n):
+        if request.url.host == "bad.example.org":
+            return httpx2.Response(302, headers={"Location": "mailto:webmaster@example.org"})
+        return httpx2.Response(200, content=FEED)
+
+    raw, _, _ = run(handler, feeds=(BAD, GOOD))
+    assert raw == {"Good": FEED}
+    assert "InvalidURL" in caplog.text

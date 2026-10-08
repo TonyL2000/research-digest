@@ -29,7 +29,9 @@ def fetch_one(client: httpx2.Client, url: str, sleep: Callable[[float], None]) -
             response = client.get(url)
         except httpx2.TransportError as exc:  # timeouts, DNS, connection resets: retry
             problem = type(exc).__name__
-        except httpx2.HTTPError as exc:  # redirect loops, undecodable bodies: give up
+        except (httpx2.HTTPError, httpx2.InvalidURL) as exc:
+            # Redirect loops, undecodable bodies, a redirect to a malformed address: no
+            # point in retrying. (InvalidURL is not a subclass of HTTPError.)
             raise FeedError(type(exc).__name__) from None
         else:
             if response.status_code == 200:

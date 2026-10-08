@@ -38,6 +38,8 @@ def parse_fixture(name: str, max_summary_chars: int = 600):
         ("https://example.com/a?UTM_Campaign=x&gclid=1", "https://example.com/a"),
         ("https://arxiv.org/abs/2610.06947", "https://arxiv.org/abs/2610.06947"),
         ("http://example.com:80/a", "https://example.com/a"),
+        ("https://example.com:443/a", "https://example.com/a"),
+        ("https://example.com:80/a", "https://example.com:80/a"),  # not the default for https
         ("https://example.com:8443/a", "https://example.com:8443/a"),
         # other parameters are kept exactly as the site wrote them
         (
@@ -72,7 +74,7 @@ def test_truncate_cuts_at_a_word_and_marks_it():
 def test_plain_text_summary_keeps_math_and_loses_the_arxiv_prefix():
     feed = Feed(name="arXiv", url="https://example.org", plain_text=True)
     raw = "arXiv:2609.22190v2 Announce Type: replace \nAbstract: for $1<q<3/2$ both are finite"
-    assert clean_summary(raw, feed, "", 600) == "for $1<q<3/2$ both are finite"
+    assert clean_summary(raw, feed, "T", "", 600) == "for $1<q<3/2$ both are finite"
 
 
 def test_arxiv_fixture():
@@ -151,6 +153,12 @@ def test_html_in_titles_is_stripped_except_for_plain_text_feeds():
     <link>https://example.org/1</link></item></channel></rss>"""
     news = parse_feed(Feed(name="News", url="https://example.org/feed"), raw, NOW, 600)
     assert news[0].title == "Light squeezed for $a"  # an HTML parser eats the "<b$"
+
+    plain = raw.replace(b"Light &lt;i&gt;squeezed&lt;/i&gt; for $a&lt;b$", b"Cooling to T&lt;Tc")
+    assert (
+        parse_feed(Feed(name="News", url="https://example.org/feed"), plain, NOW, 600)[0].title
+        == "Cooling to T<Tc"
+    )  # not markup, so nothing is stripped
     arxiv = Feed(name="arXiv", url="https://example.org/feed", plain_text=True)
     assert parse_feed(arxiv, raw, NOW, 600)[0].title == "Light <i>squeezed</i> for $a<b$"
 
@@ -159,7 +167,11 @@ def test_wordpress_footer_is_cut_only_at_the_end():
     feed = Feed(name="News", url="https://example.org/feed")
     footer = " The post A Title appeared first on Some Site."
     teaser = "The post office problem, first appeared on a blackboard in 1947, is solved."
-    assert clean_summary(teaser + footer, feed, "", 600) == teaser
+    assert clean_summary(teaser + footer, feed, "A Title", "", 600) == teaser
     plain = "The post office problem is finally solved."
-    assert clean_summary(plain, feed, "", 600) == plain  # no footer: nothing is cut
-    assert clean_summary(footer, feed, "", 600) == ""  # an entry that is only a footer
+    assert clean_summary(plain, feed, "A Title", "", 600) == plain  # no footer: nothing cut
+    assert clean_summary(footer, feed, "A Title", "", 600) == ""  # an entry that is only a footer
+    # a title that itself contains "The post" must not leave half a footer behind
+    title = "Why The post office still matters"
+    text = f"Mail is back. The post {title} appeared first on Some Site."
+    assert clean_summary(text, feed, title, "", 600) == "Mail is back."

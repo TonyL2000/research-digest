@@ -47,7 +47,9 @@ def canonical_url(url: str) -> str:
     """One spelling per page: https, lowercase host, no tracking parameters,
     no fragment, no trailing slash."""
     parts = urlsplit(url.strip())
-    host = parts.netloc.lower().removesuffix(":80").removesuffix(":443")
+    # Drop the port only when it is the default one for the scheme the site used.
+    default_port = {"http": ":80", "https": ":443"}.get(parts.scheme.lower(), ":")
+    host = parts.netloc.lower().removesuffix(default_port)
     # Drop tracking parameters and leave the others exactly as the site wrote them.
     kept = [pair for pair in parts.query.split("&") if pair and not _is_tracking(pair)]
     return urlunsplit(("https", host, parts.path.rstrip("/"), "&".join(kept), ""))
@@ -106,7 +108,7 @@ def truncate(text: str, limit: int) -> str:
     return text[: limit - 1].rsplit(" ", 1)[0] + "…"
 
 
-def clean_summary(text: str, feed: Feed, authors: str, limit: int) -> str:
+def clean_summary(text: str, feed: Feed, title: str, authors: str, limit: int) -> str:
     # arXiv abstracts are plain text full of "<" and ">" from mathematics; an HTML
     # parser would eat them, so plain-text feeds skip that step.
     if not feed.plain_text:
@@ -115,9 +117,12 @@ def clean_summary(text: str, feed: Feed, authors: str, limit: int) -> str:
     text = ARXIV_PREFIX.sub("", text)
     text = text.removeprefix(f"Author(s): {authors}").lstrip()  # APS repeats the byline
     text = APS_CITATION.sub("", text)
-    # Cut the footer at the LAST "The post", and only if everything after it is the
-    # footer, so a teaser that happens to contain those words is left alone.
-    start = text.rfind("The post ")
+    # The footer repeats the entry's own title, so look for exactly that first. Cut
+    # only if everything from there to the end is the footer, so that a teaser which
+    # happens to contain the words "The post" is left alone.
+    start = text.rfind(f"The post {title} ")
+    if start == -1:
+        start = text.rfind("The post ")
     if start != -1 and WORDPRESS_FOOTER.fullmatch(text[start:]):
         text = text[:start].rstrip()
     return truncate(text, limit)
@@ -135,7 +140,9 @@ def parse_feed(feed: Feed, raw: bytes, now: datetime, max_summary_chars: int) ->
     for entry in parsed.entries:
         link = entry.get("link", "")
         title = entry.get("title", "")
-        if not feed.plain_text:
+        # Strip markup only from titles feedparser itself classifies as HTML. Run on a
+        # plain title, an HTML parser would cut "Cooling to T<Tc" down to "Cooling to T".
+        if not feed.plain_text and entry.get("title_detail", {}).get("type") != "text/plain":
             title = strip_html(title)
         title = squeeze(title)
         try:
@@ -157,7 +164,9 @@ def parse_feed(feed: Feed, raw: bytes, now: datetime, max_summary_chars: int) ->
                 source=feed.name,
                 authors=authors,
                 published=published,
-                summary=clean_summary(entry.get("summary", ""), feed, authors, max_summary_chars),
+                summary=clean_summary(
+                    entry.get("summary", ""), feed, title, authors, max_summary_chars
+                ),
                 announce_type=entry.get("arxiv_announce_type", ""),
             )
         )
