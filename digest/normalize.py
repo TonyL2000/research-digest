@@ -14,6 +14,11 @@ from digest.models import Item
 
 log = logging.getLogger(__name__)
 
+
+class MalformedFeed(Exception):
+    """The download looked like a feed, but no entry could be read from it."""
+
+
 # Query parameters that only track where a click came from. Anything starting with
 # "utm_" is dropped as well.
 TRACKING_PARAMS = {
@@ -130,12 +135,10 @@ def clean_summary(text: str, feed: Feed, title: str, authors: str, limit: int) -
 
 def parse_feed(feed: Feed, raw: bytes, now: datetime, max_summary_chars: int) -> list[Item]:
     """Parse one downloaded feed. Entries without a title or a usable http(s) link are
-    dropped."""
-    # sanitize_html is off because feedparser's sanitizer treats arXiv's "<" as markup.
-    # We strip HTML ourselves and escape everything again when rendering.
+    dropped. Raises MalformedFeed if the feed is broken and nothing usable could be read."""
+    # Two feedparser features are switched off because each treats arXiv's "<" as
+    # markup. We strip HTML ourselves and escape everything again when rendering.
     parsed = feedparser.parse(raw, sanitize_html=False, resolve_relative_uris=False)
-    if parsed.bozo and not parsed.entries:
-        log.warning("feed %r is malformed: %s", feed.name, type(parsed.bozo_exception).__name__)
     items = []
     for entry in parsed.entries:
         link = entry.get("link", "")
@@ -170,4 +173,11 @@ def parse_feed(feed: Feed, raw: bytes, now: datetime, max_summary_chars: int) ->
                 announce_type=entry.get("arxiv_announce_type", ""),
             )
         )
+    # "bozo" is feedparser's flag for "this was not well-formed XML", for example a
+    # download that was cut short. It still returns what it could read before the problem.
+    if parsed.bozo:
+        problem = type(parsed.bozo_exception).__name__
+        if not items:
+            raise MalformedFeed(problem)
+        log.warning("feed %r is damaged (%s); %d items were read", feed.name, problem, len(items))
     return items

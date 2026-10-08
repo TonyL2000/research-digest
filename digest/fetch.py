@@ -1,4 +1,4 @@
-"""Download feeds. A failing feed is logged and skipped; it never stops the run."""
+"""Download feeds. A feed that cannot be downloaded is logged and skipped."""
 
 import logging
 import time

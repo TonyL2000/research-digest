@@ -8,6 +8,7 @@ from helpers import FakeClient, make_pick, model_reply, repo_config
 
 import digest.__main__ as cli
 from digest import deliver as channels
+from digest.config import load_config
 from digest.dedup import SeenStore
 from digest.dryrun import FIXTURE_NOW, read_fixtures
 from digest.dryrun import FakeClient as DryRunClient
@@ -61,7 +62,7 @@ def test_cli_dry_run_is_offline_and_writes_to_out(tmp_path, monkeypatch, no_netw
     assert not (tmp_path / "digests").exists()
     markdown = (out / "2026-10-07.md").read_text(encoding="utf-8")
     assert markdown.startswith("# Research digest: 2026-10-07")
-    assert markdown.count("\n### [") == 10  # top_k entries
+    assert markdown.count("\n### [") == load_config(use_local=False).top_k
     assert "Model fake model (dry run)" in markdown  # the footer does not credit a real model
     assert "<h1>Research digest: 2026-10-07</h1>" in (out / "email.html").read_text(
         encoding="utf-8"
@@ -303,3 +304,21 @@ def test_watch_list_reaches_the_prompt_and_the_digest(tmp_path):
     data = prompt.split("</candidates>")[0]  # the instructions mention the flag as well
     assert data.count('"must_include": true') == 1
     assert "FactorBench" in (tmp_path / "2026-10-07.md").read_text(encoding="utf-8")
+
+
+def truncated(raw: bytes) -> bytes:
+    """A download that was cut off before the first entry was complete."""
+    return raw[: raw.index(b"<item") + 40]
+
+
+def test_a_feed_cut_off_before_its_first_entry_counts_as_failed(tmp_path):
+    raw = read_fixtures(repo_config().feeds)
+    raw["Quanta Magazine"] = truncated(raw["Quanta Magazine"])
+    assert run_fixtures(tmp_path, raw=raw) == 0
+    text = (tmp_path / "digests" / "2026-10-07.md").read_text(encoding="utf-8")
+    assert "Feeds that failed: Quanta Magazine." in text
+
+
+def test_every_feed_cut_off_is_an_error_not_a_quiet_day(tmp_path):
+    raw = {name: truncated(body) for name, body in read_fixtures(repo_config().feeds).items()}
+    assert run_fixtures(tmp_path, raw=raw) == 1
