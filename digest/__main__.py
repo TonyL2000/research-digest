@@ -32,9 +32,12 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    config = load_config(env=os.environ)
 
     if args.dry_run:
+        # A dry run gives the same result on every machine: it ignores config.local.yaml
+        # and the environment, and labels the fake model as what it is.
+        config = load_config(use_local=False)
+        config.model = "fake model (dry run)"
         return run(
             config,
             now=FIXTURE_NOW,
@@ -46,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
             send=False,
             env={},
         )
+
+    config = load_config(env=os.environ)
     return run(
         config,
         now=datetime.now(UTC),

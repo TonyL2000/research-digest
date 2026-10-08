@@ -62,6 +62,7 @@ def test_cli_dry_run_is_offline_and_writes_to_out(tmp_path, monkeypatch, no_netw
     markdown = (out / "2026-10-07.md").read_text(encoding="utf-8")
     assert markdown.startswith("# Research digest: 2026-10-07")
     assert markdown.count("\n### [") == 10  # top_k entries
+    assert "Model fake model (dry run)" in markdown  # the footer does not credit a real model
     assert "<h1>Research digest: 2026-10-07</h1>" in (out / "email.html").read_text(
         encoding="utf-8"
     )
@@ -210,3 +211,47 @@ def test_no_send_skips_delivery(tmp_path, monkeypatch):
     monkeypatch.setattr(channels, "send_email", boom)
     monkeypatch.setattr(channels, "send_wechat", boom)
     assert run_fixtures(tmp_path, send=False, env=ALL_ENV) == 0
+
+
+# --- isolation of feeds, and what an unranked day uses up ----------------------------------------
+
+
+def test_a_feed_that_cannot_be_parsed_is_reported_and_the_rest_continue(tmp_path, monkeypatch):
+    import digest.pipeline as pipeline
+
+    real_parse = pipeline.parse_feed
+
+    def parse(feed, *args):
+        if feed.name == "Physics World":
+            raise RuntimeError("parser blew up")
+        return real_parse(feed, *args)
+
+    monkeypatch.setattr(pipeline, "parse_feed", parse)
+    assert run_fixtures(tmp_path) == 0
+    text = (tmp_path / "digests" / "2026-10-07.md").read_text(encoding="utf-8")
+    assert "Feeds that failed: Physics World." in text
+
+
+def test_every_feed_failing_to_parse_is_an_error(tmp_path, monkeypatch):
+    import digest.pipeline as pipeline
+
+    def parse(*args):
+        raise RuntimeError("parser blew up")
+
+    monkeypatch.setattr(pipeline, "parse_feed", parse)
+    assert run_fixtures(tmp_path) == 1
+    assert not (tmp_path / "digests").exists()
+
+
+def test_an_unranked_run_uses_up_only_what_it_showed(tmp_path):
+    seen_path = tmp_path / "data" / "seen.json"
+    assert run_fixtures(tmp_path, client=FakeClient(model_reply(None, "refusal"))) == 0
+    assert len(SeenStore.load(seen_path).entries) == 10  # top_k, not all 26 eligible items
+
+    # The same day, once the model works again: the other items are still there to rank.
+    assert run_fixtures(tmp_path) == 0
+    names = sorted(path.name for path in (tmp_path / "digests").iterdir())
+    assert names == ["2026-10-07-2.md", "2026-10-07.md"]
+    second = (tmp_path / "digests" / "2026-10-07-2.md").read_text(encoding="utf-8")
+    assert "Unranked" not in second
+    assert len(SeenStore.load(seen_path).entries) == 26

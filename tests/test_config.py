@@ -17,7 +17,7 @@ watch_authors: [Public Person]
 def test_committed_config_is_valid_and_quotas_fit_the_cap():
     config = repo_config()
     assert config.model == "claude-haiku-5-5"
-    assert sum(feed.quota for feed in config.feeds) <= config.max_candidates
+    assert sum(feed.quota or 0 for feed in config.feeds) <= config.max_candidates
     assert all(feed.fixture for feed in config.feeds)  # every feed works in a dry run
 
 
@@ -58,3 +58,26 @@ def test_archive_url():
 def test_user_agent_names_the_project():
     assert user_agent({}).startswith("research-digest/")
     assert "github.com/someone/repo" in user_agent({"GITHUB_REPOSITORY": "someone/repo"})
+
+
+def test_local_file_can_be_ignored(tmp_path):
+    (tmp_path / "config.yaml").write_text(BASE, encoding="utf-8")
+    (tmp_path / "config.local.yaml").write_text("top_k: 3\n", encoding="utf-8")
+    assert load_config(tmp_path, use_local=False).top_k == 10  # what a dry run does
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "top_k: 0\n",
+        "max_summary_chars: 5\n",
+        "lookback_hours: -1\n",
+        "feeds:\n  - {name: Same, url: 'https://example.org/1'}\n  - {name: Same, url: 'https://example.org/2'}\n",
+    ],
+)
+def test_values_that_would_silently_misbehave_are_rejected(tmp_path, extra):
+    (tmp_path / "config.yaml").write_text(
+        "interests: optics\nfeeds: []\n" + extra, encoding="utf-8"
+    )
+    with pytest.raises(ValidationError):
+        load_config(tmp_path)

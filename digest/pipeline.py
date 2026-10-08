@@ -36,16 +36,23 @@ def run(
     seen_path: the seen store, or None to neither read nor write one (dry run).
     preview_dir: if set, the HTML and WeChat renderings are written there as files.
     """
-    failed_feeds = [feed.name for feed in config.feeds if feed.name not in raw]
-    if not raw:
-        log.error("every feed failed; nothing to do")
-        return 1
-
     # 1. Normalize every feed into Item objects.
     items = []
+    failed_feeds = []
     for feed in config.feeds:
-        if feed.name in raw:
+        if feed.name not in raw:  # the download failed; fetch.py has logged why
+            failed_feeds.append(feed.name)
+            continue
+        try:
             items += parse_feed(feed, raw[feed.name], now, config.max_summary_chars)
+        except Exception as exc:
+            # Feed content is written by strangers. Whatever is wrong with one feed must
+            # not stop the others.
+            log.error("feed %r could not be parsed: %s", feed.name, type(exc).__name__)
+            failed_feeds.append(feed.name)
+    if len(failed_feeds) == len(config.feeds):
+        log.error("every feed failed; nothing to do")
+        return 1
     mark_watched(items, config.watch_authors)
 
     # 2. Keep what is new and eligible. The cheap filters run before the title comparison
@@ -84,12 +91,16 @@ def run(
     markdown = render_markdown(digest)
     html = render_html(digest)
 
-    # 4. Archive first, then mark as seen: every eligible item gets exactly one chance,
-    #    and a run that crashes before this point will retry the same items tomorrow.
+    # 4. Archive first, then mark as seen. A run that crashes before this point has
+    #    marked nothing, so running it again the same day starts from the same items.
     archive = write_archive(archive_dir, digest.day, markdown, keep_existing=bool(seen_path))
     log.info("wrote %s (%d entries, ranked=%s)", archive, len(digest.entries), digest.ranked)
     if seen_path:
-        seen.add((item.url for item in eligible), now.date())
+        # A ranked run uses up everything that was eligible: each item gets one chance.
+        # An unranked run uses up only what it showed, so that a second run the same day,
+        # once the model works again, can still rank the rest.
+        used = eligible if digest.ranked else [entry.item for entry in digest.entries]
+        seen.add((item.url for item in used), now.date())
         seen.prune(now.date())
         seen.save(seen_path)
 
@@ -102,7 +113,8 @@ def run(
     if not send:
         return 0
 
-    # 5. Deliver. Each channel is isolated; fail only if every enabled channel failed.
+    # 5. Deliver. Each channel is isolated; this step fails only if every enabled
+    #    channel failed.
     enabled = {}
     if channels.email_enabled(env):
         enabled["email"] = lambda: channels.send_email(env, subject(digest), markdown, html)

@@ -1,4 +1,6 @@
-target-version = "py314"
+# One version below the interpreter we run (3.14), so the formatter keeps the familiar
+# parenthesised `except (A, B):` instead of the 3.14-only form without parentheses.
+target-version = "py313"
 line-length = 100
 
 [lint]

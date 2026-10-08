@@ -103,3 +103,12 @@ def test_merging_keeps_the_watched_flag():
     plain = make_item("Same story", "https://example.org/1", source="A")
     watched = make_item("Same story", "https://example.org/2", source="B", watched=True)
     assert merge_duplicates([plain, watched])[0].watched
+
+
+def test_a_title_that_extends_another_is_a_different_item():
+    # Every word of the first title is in the second, so token_set_ratio alone says 100.
+    base = make_item("Photon blockade in a driven cavity", "https://example.org/1", source="A")
+    longer = make_item(
+        "Photon blockade in a driven cavity with two atoms", "https://example.org/2", source="B"
+    )
+    assert not is_duplicate(base, longer)

@@ -5,6 +5,7 @@ import re
 from collections.abc import Iterable
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Self
 
 from rapidfuzz import fuzz
 
@@ -13,7 +14,7 @@ from digest.normalize import url_hash
 
 SEEN_MAX_AGE_DAYS = 60
 TITLE_MATCH = 90  # minimum rapidfuzz token_set_ratio (0-100) to call two titles the same
-MIN_LENGTH_RATIO = 0.5  # the shorter title must be at least half as long as the longer one
+MIN_LENGTH_RATIO = 0.8  # the shorter title must be at least 80% as long as the longer one
 
 
 class SeenStore:
@@ -23,7 +24,7 @@ class SeenStore:
         self.entries = dict(entries or {})
 
     @classmethod
-    def load(cls, path: Path) -> SeenStore:
+    def load(cls, path: Path) -> Self:
         if not path.exists():
             return cls()
         return cls(json.loads(path.read_text(encoding="utf-8")))
@@ -60,9 +61,9 @@ def is_duplicate(a: Item, b: Item) -> bool:
     if a.source == b.source:
         return False
     title_a, title_b = normalize_title(a.title), normalize_title(b.title)
-    # token_set_ratio scores 100 when one title's words are a subset of the other's, so a
-    # two-word title would match any longer title containing those words. Require
-    # comparable lengths first.
+    # token_set_ratio scores 100 when one title's words are a subset of the other's, so
+    # "Photon blockade" would match any longer title containing those two words. Require
+    # nearly equal lengths first.
     shorter, longer = sorted((len(title_a), len(title_b)))
     if shorter < MIN_LENGTH_RATIO * longer:
         return False
