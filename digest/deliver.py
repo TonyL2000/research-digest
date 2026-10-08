@@ -17,6 +17,10 @@ import httpx2
 
 log = logging.getLogger(__name__)
 
+# httpx2 logs one line per request at INFO level. Keep the log quiet. (send_wechat sets
+# this again, because for that request it is a matter of secrecy, not of tidiness.)
+logging.getLogger("httpx2").setLevel(logging.WARNING)
+
 SMTP_TIMEOUT_SECONDS = 30
 EMAIL_VARS = ("SMTP_HOST", "SMTP_USER", "SMTP_PASS", "MAIL_TO")
 SERVERCHAN_URL = "https://sctapi.ftqq.com/{key}.send"
@@ -46,8 +50,10 @@ def send_email(env: Mapping[str, str], subject: str, text: str, html: str) -> No
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = env.get("MAIL_FROM", "").strip() or env["SMTP_USER"].strip()
-    # Accept "a@x, b@y" and "a@x; b@y"; the header itself needs commas.
-    recipients = [part.strip() for part in re.split("[;,]", env["MAIL_TO"]) if part.strip()]
+    # Accept addresses separated by commas, semicolons or spaces; the header itself
+    # needs commas. (With "Name <address>" forms, only commas and semicolons separate.)
+    separators = "[;,]" if "<" in env["MAIL_TO"] else r"[;,\s]+"
+    recipients = [part.strip() for part in re.split(separators, env["MAIL_TO"]) if part.strip()]
     message["To"] = ", ".join(recipients)
     message.set_content(text)
     message.add_alternative(html, subtype="html")

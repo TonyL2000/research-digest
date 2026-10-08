@@ -29,7 +29,7 @@ def md(text: str) -> str:
 def md_link(title: str, url: str) -> str:
     # Percent-encode everything that could end the link early or start markup:
     # parentheses, spaces, quotes, angle brackets, backslashes.
-    safe_url = quote(url, safe=":/?#@!$&'*+,;=%~")
+    safe_url = quote(url, safe=":/?#[]@!$&'*+,;=%~")
     return f"[{md(title)}]({safe_url})"
 
 

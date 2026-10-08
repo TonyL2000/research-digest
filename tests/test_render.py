@@ -83,7 +83,8 @@ def hostile_digest() -> Digest:
 def test_markdown_neutralizes_markup_from_feeds_and_model():
     text = render_markdown(hostile_digest())
     assert "<script>" not in text and "<img" not in text and "<b>" not in text
-    assert "[click]" not in text and "![pixel]" not in text  # no new links or images
+    assert "[click" not in text and "![pixel" not in text  # no new links or images
+    assert "&#91;click&#93;" in text and "&#91;pixel&#93;" in text
     assert "&lt;script&gt;" in text
     assert "(https://example.org/a%28b%29?q=%22x%22&r=1)" in text  # the item's own link survives
 
@@ -170,3 +171,9 @@ def test_a_backslash_cannot_cancel_the_escaping():
         in text
     )
     assert "<h1>" not in text
+
+
+def test_markdown_link_to_an_ipv6_host_keeps_its_brackets():
+    item = make_item("Local", "https://[::1]:8080/x")
+    text = render_markdown(sample_digest(entries=[make_entry(item)]))
+    assert "(https://[::1]:8080/x)" in text

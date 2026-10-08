@@ -277,3 +277,14 @@ def test_reply_text_is_never_copied_into_the_error():
         send_wechat({"SERVERCHAN_SENDKEY": KEY}, "T", "B", transport=serverchan(200, body))
     assert "arbitrary" not in str(raised.value)
     assert "code missing" in str(raised.value)
+
+
+def test_mail_to_accepts_spaces_and_newlines_too(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    send_email(EMAIL_ENV | {"MAIL_TO": "a@example.org b@example.org\nc@example.org"}, "s", "t", "h")
+    assert FakeSMTP.log[-1][1]["To"] == "a@example.org, b@example.org, c@example.org"
+
+    named = '"Doe, Jane" <jane@example.org>; Bob <bob@example.org>'
+    send_email(EMAIL_ENV | {"MAIL_TO": named}, "s", "t", "h")
+    assert "jane@example.org" in FakeSMTP.log[-1][1]["To"]
+    assert "bob@example.org" in FakeSMTP.log[-1][1]["To"]
