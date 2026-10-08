@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 20.0
 ATTEMPTS = 3
 RETRY_STATUS = {429, 500, 502, 503, 504}
-PAUSE_SECONDS = 3.0  # between feeds; arXiv asks for at most one request every 3 seconds
+PAUSE_SECONDS = 3.0  # arXiv asks for at most one request every 3 seconds
 FEED_STARTS = (b"<?xml", b"<rss", b"<rdf", b"<feed")
 
 
@@ -22,13 +22,15 @@ class FeedError(Exception):
 
 
 def fetch_one(client: httpx2.Client, url: str, sleep: Callable[[float], None]) -> bytes:
-    """GET one feed, retrying temporary failures with exponential backoff (2 s, then 4 s)."""
+    """GET one feed, retrying temporary failures after 3 and then 6 seconds."""
     problem = ""
     for attempt in range(1, ATTEMPTS + 1):
         try:
             response = client.get(url)
-        except httpx2.TransportError as exc:  # timeouts, DNS, connection resets
+        except httpx2.TransportError as exc:  # timeouts, DNS, connection resets: retry
             problem = type(exc).__name__
+        except httpx2.HTTPError as exc:  # redirect loops, undecodable bodies: give up
+            raise FeedError(type(exc).__name__) from None
         else:
             if response.status_code == 200:
                 return checked_body(response.content)
@@ -36,7 +38,7 @@ def fetch_one(client: httpx2.Client, url: str, sleep: Callable[[float], None]) -
             if response.status_code not in RETRY_STATUS:
                 raise FeedError(problem)
         if attempt < ATTEMPTS:
-            sleep(2**attempt)
+            sleep(PAUSE_SECONDS * attempt)
     raise FeedError(f"gave up after {ATTEMPTS} attempts ({problem})")
 
 

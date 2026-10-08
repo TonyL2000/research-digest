@@ -37,6 +37,13 @@ def parse_fixture(name: str, max_summary_chars: int = 600):
         ("  https://example.com/a  ", "https://example.com/a"),
         ("https://example.com/a?UTM_Campaign=x&gclid=1", "https://example.com/a"),
         ("https://arxiv.org/abs/2610.06947", "https://arxiv.org/abs/2610.06947"),
+        ("http://example.com:80/a", "https://example.com/a"),
+        ("https://example.com:8443/a", "https://example.com:8443/a"),
+        # other parameters are kept exactly as the site wrote them
+        (
+            "https://example.com/a?q=a%20b+c&flag&utm_id=1&x=",
+            "https://example.com/a?q=a%20b+c&flag&x=",
+        ),
     ],
 )
 def test_canonical_url(raw, expected):
@@ -126,3 +133,33 @@ def test_entries_without_title_or_web_link_are_dropped_and_missing_dates_mean_no
     assert [item.title for item in items] == ["Good"]
     assert items[0].published == NOW
     assert items[0].source == "Tiny"
+
+
+def test_bad_links_are_skipped_without_stopping_the_feed():
+    raw = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
+    <item><title>Broken host</title><link>http://[oops/story</link></item>
+    <item><title>No host</title><link>http:javascript:alert(1)</link></item>
+    <item><title>Fine</title><link>https://example.org/fine</link></item>
+    </channel></rss>"""
+    items = parse_feed(Feed(name="Tiny", url="https://example.org/feed"), raw, NOW, 600)
+    assert [item.title for item in items] == ["Fine"]
+
+
+def test_html_in_titles_is_stripped_except_for_plain_text_feeds():
+    raw = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>t</title>
+    <item><title>Light &lt;i&gt;squeezed&lt;/i&gt; for $a&lt;b$</title>
+    <link>https://example.org/1</link></item></channel></rss>"""
+    news = parse_feed(Feed(name="News", url="https://example.org/feed"), raw, NOW, 600)
+    assert news[0].title == "Light squeezed for $a"  # an HTML parser eats the "<b$"
+    arxiv = Feed(name="arXiv", url="https://example.org/feed", plain_text=True)
+    assert parse_feed(arxiv, raw, NOW, 600)[0].title == "Light <i>squeezed</i> for $a<b$"
+
+
+def test_wordpress_footer_is_cut_only_at_the_end():
+    feed = Feed(name="News", url="https://example.org/feed")
+    footer = " The post A Title appeared first on Some Site."
+    teaser = "The post office problem, first appeared on a blackboard in 1947, is solved."
+    assert clean_summary(teaser + footer, feed, "", 600) == teaser
+    plain = "The post office problem is finally solved."
+    assert clean_summary(plain, feed, "", 600) == plain  # no footer: nothing is cut
+    assert clean_summary(footer, feed, "", 600) == ""  # an entry that is only a footer

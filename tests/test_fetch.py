@@ -40,7 +40,7 @@ def test_temporary_errors_are_retried_with_backoff():
     raw, requests, sleeps = run(handler)
     assert raw == {"Good": FEED}
     assert len(requests) == 3
-    assert sleeps == [2, 4]
+    assert sleeps == [3, 6]  # never faster than arXiv's limit
 
 
 def test_connection_errors_are_retried():
@@ -76,4 +76,29 @@ def test_a_failing_feed_is_skipped_and_the_rest_still_load():
     raw, requests, sleeps = run(handler, feeds=(BAD, GOOD))
     assert raw == {"Good": FEED}
     assert len(requests) == 4  # three attempts at the bad feed, then the good one
-    assert sleeps == [2, 4, PAUSE_SECONDS]  # backoff, then the polite pause between feeds
+    assert sleeps == [3, 6, PAUSE_SECONDS]  # backoff, then the polite pause between feeds
+
+
+def test_a_redirect_loop_skips_only_that_feed(caplog):
+    def handler(request, n):
+        if request.url.host == "bad.example.org":
+            return httpx2.Response(302, headers={"Location": str(request.url)})
+        return httpx2.Response(200, content=FEED)
+
+    raw, _, sleeps = run(handler, feeds=(BAD, GOOD))
+    assert raw == {"Good": FEED}
+    assert "TooManyRedirects" in caplog.text
+    assert sleeps == [PAUSE_SECONDS]  # not a temporary failure, so no retry
+
+
+def test_an_undecodable_body_skips_only_that_feed(caplog):
+    def handler(request, n):
+        if request.url.host == "bad.example.org":
+            return httpx2.Response(
+                200, headers={"Content-Encoding": "gzip"}, stream=httpx2.ByteStream(b"not gzip")
+            )
+        return httpx2.Response(200, content=FEED)
+
+    raw, _, _ = run(handler, feeds=(BAD, GOOD))
+    assert raw == {"Good": FEED}
+    assert "DecodingError" in caplog.text

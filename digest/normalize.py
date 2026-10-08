@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import UTC, datetime
 from html.parser import HTMLParser
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import feedparser
 
@@ -36,25 +36,26 @@ INLINE_TAGS = {"a", "b", "i", "em", "strong", "span", "sub", "sup", "code", "u"}
 
 # Text that feeds add around the real summary.
 ARXIV_PREFIX = re.compile(r"^arXiv:\S+ Announce Type: \S+ Abstract: ")
-BOILERPLATE = [
-    # WordPress feeds (Physics World, Quanta): "The post <title> appeared first on <site>."
-    re.compile(r"\s*The post .{1,300}? (?:appeared first|first appeared) on .{1,80}$"),
-    # APS Physics: "[Physics 19, 135] Published Wed Oct 07, 2026"
-    re.compile(r"\s*\[Physics \d+, \w+\] Published .{1,40}$"),
-]
+# WordPress feeds (Physics World, Quanta) end with "The post <title> appeared first on
+# <site>." The whole remaining text must match, see clean_summary.
+WORDPRESS_FOOTER = re.compile(r"The post .{1,300} (?:appeared first|first appeared) on .{1,80}")
+# APS Physics ends with "[Physics 19, 135] Published Wed Oct 07, 2026".
+APS_CITATION = re.compile(r"\s*\[Physics \d+, \w+\] Published .{1,40}$")
 
 
 def canonical_url(url: str) -> str:
     """One spelling per page: https, lowercase host, no tracking parameters,
     no fragment, no trailing slash."""
     parts = urlsplit(url.strip())
-    query = [
-        (key, value)
-        for key, value in parse_qsl(parts.query, keep_blank_values=True)
-        if not key.lower().startswith("utm_") and key.lower() not in TRACKING_PARAMS
-    ]
-    path = parts.path.rstrip("/")
-    return urlunsplit(("https", parts.netloc.lower(), path, urlencode(query), ""))
+    host = parts.netloc.lower().removesuffix(":80").removesuffix(":443")
+    # Drop tracking parameters and leave the others exactly as the site wrote them.
+    kept = [pair for pair in parts.query.split("&") if pair and not _is_tracking(pair)]
+    return urlunsplit(("https", host, parts.path.rstrip("/"), "&".join(kept), ""))
+
+
+def _is_tracking(pair: str) -> bool:
+    key = pair.split("=", 1)[0].lower()
+    return key.startswith("utm_") or key in TRACKING_PARAMS
 
 
 def url_hash(url: str) -> str:
@@ -113,13 +114,18 @@ def clean_summary(text: str, feed: Feed, authors: str, limit: int) -> str:
     text = squeeze(text)
     text = ARXIV_PREFIX.sub("", text)
     text = text.removeprefix(f"Author(s): {authors}").lstrip()  # APS repeats the byline
-    for pattern in BOILERPLATE:
-        text = pattern.sub("", text)
+    text = APS_CITATION.sub("", text)
+    # Cut the footer at the LAST "The post", and only if everything after it is the
+    # footer, so a teaser that happens to contain those words is left alone.
+    start = text.rfind("The post ")
+    if start != -1 and WORDPRESS_FOOTER.fullmatch(text[start:]):
+        text = text[:start].rstrip()
     return truncate(text, limit)
 
 
 def parse_feed(feed: Feed, raw: bytes, now: datetime, max_summary_chars: int) -> list[Item]:
-    """Parse one downloaded feed. Entries without a title or an http(s) link are dropped."""
+    """Parse one downloaded feed. Entries without a title or a usable http(s) link are
+    dropped."""
     # sanitize_html is off because feedparser's sanitizer treats arXiv's "<" as markup.
     # We strip HTML ourselves and escape everything again when rendering.
     parsed = feedparser.parse(raw, sanitize_html=False, resolve_relative_uris=False)
@@ -128,8 +134,15 @@ def parse_feed(feed: Feed, raw: bytes, now: datetime, max_summary_chars: int) ->
     items = []
     for entry in parsed.entries:
         link = entry.get("link", "")
-        title = squeeze(entry.get("title", ""))
-        if not title or urlsplit(link).scheme not in ("http", "https"):
+        title = entry.get("title", "")
+        if not feed.plain_text:
+            title = strip_html(title)
+        title = squeeze(title)
+        try:
+            parts = urlsplit(link)
+        except ValueError:  # for example an unmatched "[" in the host
+            continue
+        if not title or parts.scheme not in ("http", "https") or not parts.hostname:
             continue
         url = canonical_url(link)
         authors = squeeze(", ".join(a["name"] for a in entry.get("authors", []) if a.get("name")))
