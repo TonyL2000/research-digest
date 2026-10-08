@@ -73,7 +73,7 @@ def test_real_sdk_refusal_falls_back():
 def test_real_sdk_cut_off_reply_falls_back():
     cut_off = picks_json(ITEMS[0].id)[:40]
     client = client_answering(200, api_message(cut_off, "max_tokens"))
-    assert "ValidationError" in select(client, ITEMS, make_config()).fallback_reason
+    assert "the reply was cut off" in select(client, ITEMS, make_config()).fallback_reason
 
 
 def test_real_sdk_http_error_falls_back():

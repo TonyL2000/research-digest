@@ -10,10 +10,11 @@ from digest.models import Item
 def mark_watched(items: list[Item], watch_authors: list[str]) -> None:
     """Flag items with a watched author. The author field is one string (arXiv joins
     names with commas, and affiliations contain commas too), so search inside it."""
-    # A name must match whole words: "Wei Li" must not match "Wei Liang". The pattern
-    # says "not preceded and not followed by a letter or digit".
+    # A name must match as a whole: "Wei Li" must match neither "Wei Liang" nor
+    # "Jian-Wei Li". The pattern says "not preceded and not followed by a letter, a
+    # digit or a hyphen".
     patterns = [
-        re.compile(rf"(?<!\w){re.escape(name.strip().casefold())}(?!\w)")
+        re.compile(rf"(?<![\w-]){re.escape(name.strip().casefold())}(?![\w-])")
         for name in watch_authors
         if name.strip()
     ]

@@ -83,7 +83,7 @@ def test_ranked_selection():
             4,
             summary=(
                 "Read https://evil.example.org/x www.evil.example.org "
-                "HTTPS://EVIL.EXAMPLE/y now.\n\nReally."
+                "HTTPS://EVIL.EXAMPLE/y _www.evil.example.org/z_ now.\n\nReally."
             ),
         ),
     ]
@@ -93,7 +93,7 @@ def test_ranked_selection():
     assert result.fallback_reason == ""
     assert [entry.item.title for entry in result.entries] == ["News", "Middle"]  # by score, top 2
     assert result.entries[0].tags == ["quantum optics", "b", "c"]
-    assert result.entries[1].summary == "Read now. Really."  # the model supplies no links
+    assert result.entries[1].summary == "Read _ now. Really."  # the model supplies no links
     assert len(client.calls) == 1  # exactly one API call per run
     call = client.calls[0]
     assert call["model"] == "claude-haiku-5-5"
@@ -173,6 +173,7 @@ def test_fallback_puts_watched_authors_first():
 def test_no_client_without_an_api_key():
     assert make_client({}) is None
     assert make_client({"ANTHROPIC_API_KEY": "  "}) is None  # unset GitHub secrets are empty
+    assert make_client({"ANTHROPIC_API_KEY": " test-key\n"}).api_key == "test-key"
 
 
 def test_a_watched_pick_below_the_cut_keeps_the_models_text():
@@ -193,8 +194,18 @@ def test_fallback_prefers_priority_keywords_over_recency():
     assert [entry.item.title for entry in result.entries] == ["Oldest", "News"]
 
 
-def test_a_reply_without_usage_falls_back_instead_of_crashing():
+def test_a_reply_without_usage_keeps_its_ranking():
     reply = model_reply([make_pick(candidates()[0].id)])
     reply.usage = None
     result = select(FakeClient(reply), candidates(), make_config())
-    assert "AttributeError" in result.fallback_reason
+    assert result.fallback_reason == ""
+    assert [entry.item.title for entry in result.entries] == ["Oldest"]
+    assert result.usage is None
+
+
+def test_fallback_shows_every_watched_author_even_beyond_top_k():
+    items = candidates()
+    for item in items[:3]:
+        item.watched = True
+    result = select(None, items, make_config(top_k=2))
+    assert [entry.item.title for entry in result.entries] == ["Oldest", "Middle", "Newest"]

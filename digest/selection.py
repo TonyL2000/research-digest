@@ -54,13 +54,17 @@ If fewer than {top_k} candidates are relevant, return fewer."""
 def make_client(env: Mapping[str, str]) -> anthropic.Anthropic | None:
     """Build the client, or return None when there is no API key.
 
-    The SDK reads ANTHROPIC_API_KEY itself. The check here only exists to give a clear
-    message: without a key the SDK does not fail until the first request.
+    Without a key the SDK does not fail until the first request, so check here and say
+    so clearly. The key is stripped because a secret pasted with a trailing newline
+    would otherwise fail as a confusing connection error.
     """
-    if not env.get("ANTHROPIC_API_KEY", "").strip():
+    key = env.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
         log.error("ANTHROPIC_API_KEY is not set; the digest will be unranked")
         return None
-    return anthropic.Anthropic(timeout=REQUEST_TIMEOUT_SECONDS, max_retries=MAX_RETRIES)
+    return anthropic.Anthropic(
+        api_key=key, timeout=REQUEST_TIMEOUT_SECONDS, max_retries=MAX_RETRIES
+    )
 
 
 def build_prompt(candidates: list[Item], config: Config) -> tuple[str, str]:
@@ -100,7 +104,6 @@ def select(client, candidates: list[Item], config: Config) -> SelectResult:
             messages=[{"role": "user", "content": user}],
             output_format=Selection,
         )
-        usage = measure(response, config)
     except ValidationError:
         # Raised inside the SDK when the reply does not fit Selection, typically because
         # it was cut off. The response object never reaches us, so the tokens that were
@@ -112,6 +115,12 @@ def select(client, candidates: list[Item], config: Config) -> SelectResult:
         # bad key), but whatever happens here must not cost the day's digest. The
         # exception type is shown in the digest, so a persistent problem stays visible.
         return fallback(candidates, config, f"model call failed ({type(exc).__name__})")
+
+    try:
+        usage = measure(response, config)
+    except Exception as exc:  # bookkeeping must not cost a usable ranking
+        log.warning("could not read token usage from the reply: %s", type(exc).__name__)
+        usage = None
 
     if response.stop_reason in ("refusal", "max_tokens"):
         return fallback(candidates, config, f"stop_reason={response.stop_reason}", usage)
@@ -158,7 +167,7 @@ def check(selection: Selection | None, candidates: list[Item]) -> str:
 
 def tidy(text: str, limit: int) -> str:
     """Model text is only ever displayed. It supplies no links: drop any URL it wrote."""
-    return truncate(squeeze(re.sub(r"(?i)\b(?:https?://|www\.)\S+", "", text)), limit)
+    return truncate(squeeze(re.sub(r"(?i)(?:https?://|www\.)\S+", "", text)), limit)
 
 
 def tidy_tags(tags: list[str]) -> list[str]:
@@ -178,16 +187,18 @@ def own_entry(item: Item, config: Config) -> Entry:
 def fallback(
     candidates: list[Item], config: Config, reason: str, usage: Usage | None = None
 ) -> SelectResult:
-    """A digest without the model: top_k candidates, each with the feed's own summary
-    where that may be republished. Watched authors first, then the items that mention
-    the most priority keywords, then the newest."""
+    """A digest without the model: every watched author's item, then the items that
+    mention the most priority keywords, then the newest, up to top_k in total. Each has
+    the feed's own summary where that may be republished."""
     log.warning("unranked digest: %s", reason)
 
     def order(item: Item) -> tuple:
-        hits = keyword_hits(item, config.priority_keywords)
-        return (not item.watched, -hits, -item.published.timestamp())
+        return (-keyword_hits(item, config.priority_keywords), -item.published.timestamp())
 
-    entries = [own_entry(item, config) for item in sorted(candidates, key=order)[: config.top_k]]
+    watched = [item for item in candidates if item.watched]
+    others = sorted((item for item in candidates if not item.watched), key=order)
+    chosen = watched + others[: max(config.top_k - len(watched), 0)]
+    entries = [own_entry(item, config) for item in chosen]
     return SelectResult(entries=entries, usage=usage, fallback_reason=reason)
 
 

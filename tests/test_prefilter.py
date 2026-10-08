@@ -117,9 +117,11 @@ def test_watched_names_match_whole_names_only():
         "Xiaowei Liu",
         "A. Other, Wei Li (Some University, City), B. Third",
         "J. Doe Jr., K. Roe",
+        "Chao-Yang Lu, Jian-Wei Li",
+        "Wei Li-Zhang",
     ]
     items = [
         make_item(str(n), f"https://example.org/{n}", authors=a) for n, a in enumerate(authors)
     ]
     mark_watched(items, ["wei li", "J. Doe Jr."])
-    assert [item.watched for item in items] == [True, False, False, True, True]
+    assert [item.watched for item in items] == [True, False, False, True, True, False, False]
