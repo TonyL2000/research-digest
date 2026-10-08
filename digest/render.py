@@ -1,7 +1,7 @@
 """Render a Digest as Markdown (archive and WeChat) and as HTML (email).
 
 Feed text and model text are both untrusted, so every value is escaped on its way out.
-Links always come from the feed entry, never from the model.
+Link targets always come from the feed entry, never from the model.
 """
 
 import html
@@ -12,7 +12,7 @@ from digest.models import Digest, Entry
 from digest.normalize import truncate
 
 AUTHOR_CHARS = 80
-WECHAT_TITLE_CHARS = 32  # ServerChan cuts longer titles
+WECHAT_TITLE_CHARS = 32  # ServerChan's documented maximum
 # ServerChan documents a 32 KB body limit without saying how it counts. The JSON-escaped
 # length is the largest of the plausible readings, so staying under it is always safe.
 WECHAT_BODY_LIMIT = 30_000

@@ -1,7 +1,7 @@
 # research-digest configuration.
 #
 # Personal overrides go in config.local.yaml (gitignored): any top-level key there
-# replaces the same key here. DESIGN.md explains every default in this file.
+# replaces the same key here. DESIGN.md explains the main defaults in this file.
 
 feeds:
   # quota: the most candidates this feed may send to the model per run.
@@ -43,8 +43,8 @@ interests: >
   Quantum optics, photon statistics and photon blockade, entangled-photon sources,
   integrated photonics, quantum information theory, and factor investing.
 
-# Papers by these authors always make the digest. Keep the real list out of this public
-# file: put it in config.local.yaml, or in the WATCH_AUTHORS secret on GitHub
+# New papers by these authors always make the digest. Keep the real list out of this
+# public file: put it in config.local.yaml, or in the WATCH_AUTHORS secret on GitHub
 # (names separated by semicolons).
 watch_authors: []
 

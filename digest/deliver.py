@@ -75,8 +75,8 @@ def send_wechat(
 ) -> None:
     """Push through ServerChan Turbo, which forwards to a WeChat service account."""
     # httpx2 logs every request URL at INFO level, and this URL contains the key. Silence
-    # that logger here, at the moment of sending, so that nothing done earlier (the
-    # Anthropic SDK raises its level when ANTHROPIC_LOG is set) can undo it.
+    # that logger here, at the moment of sending, so that nothing done earlier can
+    # undo it (the Anthropic SDK sets it to INFO or DEBUG when ANTHROPIC_LOG is set).
     logging.getLogger("httpx2").setLevel(logging.WARNING)
 
     key = env["SERVERCHAN_SENDKEY"].strip()
@@ -126,7 +126,7 @@ def deliver(channels: dict[str, Callable[[], None]]) -> dict[str, bool]:
     for name, send in channels.items():
         try:
             send()
-        except Exception as exc:  # noqa: BLE001 - one channel must not take down the other
+        except Exception as exc:  # broad on purpose: one channel must not stop the other
             log.error("%s delivery failed: %s", name, describe(exc))
             results[name] = False
         else:

@@ -166,7 +166,8 @@ def check(selection: Selection | None, candidates: list[Item]) -> str:
 
 
 def tidy(text: str, limit: int) -> str:
-    """Model text is only ever displayed. It supplies no links: drop any URL it wrote."""
+    """Model text is only ever displayed. Drop any web address it wrote (http, https,
+    www), so that it cannot plant a link."""
     return truncate(squeeze(re.sub(r"(?i)(?:https?://|www\.)\S+", "", text)), limit)
 
 

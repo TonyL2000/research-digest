@@ -1,4 +1,4 @@
-"""Load config.yaml, then let config.local.yaml and the environment override it."""
+"""Load config.yaml; config.local.yaml can replace keys, WATCH_AUTHORS can add names."""
 
 from collections.abc import Mapping
 from pathlib import Path
@@ -86,7 +86,7 @@ def archive_url(config: Config, env: Mapping[str, str]) -> str:
 
 
 def user_agent(env: Mapping[str, str]) -> str:
-    """Identify the bot to feed servers. Several sites reject the default library name."""
+    """Identify the bot to feed servers. Some sites reject Python's built-in user agent."""
     repo = env.get("GITHUB_REPOSITORY", "")
     where = f"+https://github.com/{repo}" if repo else "personal RSS digest"
     return f"research-digest/{__version__} ({where})"

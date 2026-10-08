@@ -11,8 +11,8 @@ from digest.models import Pick, Selection
 log = logging.getLogger(__name__)
 
 FIXTURES = ROOT / "fixtures"
-# The moment the fixture feeds were recorded. A dry run pretends it is this time, so the
-# lookback window still contains the recorded items.
+# About an hour after the fixture feeds were fetched. A dry run pretends it is this
+# time, so that the lookback window still contains the recorded items.
 FIXTURE_NOW = datetime(2026, 10, 7, 20, 0, tzinfo=UTC)
 
 
