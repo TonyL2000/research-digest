@@ -6,6 +6,7 @@ contains the send key.
 """
 
 import logging
+import re
 import smtplib
 import ssl
 import time
@@ -15,9 +16,6 @@ from email.message import EmailMessage
 import httpx2
 
 log = logging.getLogger(__name__)
-
-# httpx2 logs every request URL at INFO level. Keep it quiet so the key stays out of logs.
-logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 SMTP_TIMEOUT_SECONDS = 30
 EMAIL_VARS = ("SMTP_HOST", "SMTP_USER", "SMTP_PASS", "MAIL_TO")
@@ -48,14 +46,16 @@ def send_email(env: Mapping[str, str], subject: str, text: str, html: str) -> No
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = env.get("MAIL_FROM", "").strip() or env["SMTP_USER"].strip()
-    message["To"] = env["MAIL_TO"].strip()
+    # Accept "a@x, b@y" and "a@x; b@y"; the header itself needs commas.
+    recipients = [part.strip() for part in re.split("[;,]", env["MAIL_TO"]) if part.strip()]
+    message["To"] = ", ".join(recipients)
     message.set_content(text)
     message.add_alternative(html, subtype="html")
 
     port = int(env.get("SMTP_PORT", "").strip() or 587)
     with smtplib.SMTP(env["SMTP_HOST"].strip(), port, timeout=SMTP_TIMEOUT_SECONDS) as smtp:
         smtp.starttls(context=ssl.create_default_context())
-        smtp.login(env["SMTP_USER"].strip(), env["SMTP_PASS"])
+        smtp.login(env["SMTP_USER"].strip(), env["SMTP_PASS"].strip())
         smtp.send_message(message)
 
 
@@ -68,10 +68,15 @@ def send_wechat(
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     """Push through ServerChan Turbo, which forwards to a WeChat service account."""
+    # httpx2 logs every request URL at INFO level, and this URL contains the key. Silence
+    # that logger here, at the moment of sending, so that nothing done earlier (the
+    # Anthropic SDK raises its level when ANTHROPIC_LOG is set) can undo it.
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
+
     key = env["SERVERCHAN_SENDKEY"].strip()
     if key.lower().startswith("sctp"):
-        # ServerChan has a second product whose keys start with "sctp". It delivers to its
-        # own phone app, not to WeChat, and would report success all the same.
+        # Keys starting with "sctp" belong to a different ServerChan product, which
+        # delivers to its own phone app and not to WeChat. Refuse them early.
         raise DeliveryError("the send key is for the ServerChan app, which is not WeChat")
 
     url = SERVERCHAN_URL.format(key=key)
@@ -79,7 +84,7 @@ def send_wechat(
     with httpx2.Client(timeout=SERVERCHAN_TIMEOUT, transport=transport) as client:
         try:
             response = client.post(url, json=payload)
-        except httpx2.ConnectError, httpx2.ConnectTimeout:
+        except (httpx2.ConnectError, httpx2.ConnectTimeout):
             # Nothing was sent, so one retry cannot produce a duplicate message.
             sleep(SERVERCHAN_RETRY_SECONDS)
             try:
@@ -96,7 +101,8 @@ def send_wechat(
         reply = None
     code = reply.get("code") if isinstance(reply, dict) else None
     if code != 0:
-        raise DeliveryError(f"ServerChan refused (HTTP {response.status_code}, code {code})")
+        shown = code if isinstance(code, int) else "missing"  # never echo arbitrary reply text
+        raise DeliveryError(f"ServerChan refused (HTTP {response.status_code}, code {shown})")
 
 
 def describe(exc: Exception) -> str:

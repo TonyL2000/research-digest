@@ -225,6 +225,9 @@ def test_send_key_never_reaches_the_log(caplog, outcome):
 
     env = {"SERVERCHAN_SENDKEY": KEY}
     transport = httpx2.MockTransport(handler)
+    # httpx2 logs the full request URL at INFO. Turn that on, as the Anthropic SDK does
+    # when ANTHROPIC_LOG is set; send_wechat has to turn it off again by itself.
+    caplog.set_level(logging.INFO, logger="httpx2")
     with caplog.at_level(logging.DEBUG):
         results = deliver({"wechat": lambda: send_wechat(env, "T", "B", transport=transport)})
 
@@ -232,5 +235,45 @@ def test_send_key_never_reaches_the_log(caplog, outcome):
     assert caplog.records  # something was logged
     assert KEY not in caplog.text
     assert "p1" not in caplog.text  # the reply is not logged either
-    # httpx2 would log the full request URL at INFO; deliver.py turns that off.
-    assert logging.getLogger("httpx2").level == logging.WARNING
+
+
+def test_httpx2_really_would_log_the_url():
+    """Guards the test above: if httpx2 stops logging URLs, that test proves nothing."""
+    import io
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    logger = logging.getLogger("httpx2")
+    old_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        transport = httpx2.MockTransport(lambda request: httpx2.Response(200))
+        with httpx2.Client(transport=transport) as client:
+            client.post("https://example.org/SECRET.send")
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+    assert "SECRET" in stream.getvalue()
+
+
+def test_mail_to_accepts_commas_and_semicolons(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    send_email(
+        EMAIL_ENV | {"MAIL_TO": "a@example.org; b@example.org ,c@example.org"}, "s", "t", "h"
+    )
+    assert FakeSMTP.log[-1][1]["To"] == "a@example.org, b@example.org, c@example.org"
+
+
+def test_password_is_stripped_like_the_other_settings(monkeypatch):
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    send_email(EMAIL_ENV | {"SMTP_PASS": "app-password\n"}, "s", "t", "h")
+    assert FakeSMTP.log[2] == ("login", "me@example.org", "app-password")
+
+
+def test_reply_text_is_never_copied_into_the_error():
+    body = {"code": "<script>arbitrary reply text</script>"}
+    with pytest.raises(DeliveryError) as raised:
+        send_wechat({"SERVERCHAN_SENDKEY": KEY}, "T", "B", transport=serverchan(200, body))
+    assert "arbitrary" not in str(raised.value)
+    assert "code missing" in str(raised.value)
