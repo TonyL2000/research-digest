@@ -247,9 +247,8 @@ was copied.
 From a written specification ([SPEC.md](SPEC.md)) by the repository's owner. The code,
 the tests and these documents were written with
 [Claude Code](https://claude.com/claude-code) (model Claude Opus 5.5), which also ran
-the reviews described in DESIGN.md. Every commit carries a `Co-Authored-By` line naming
-the model. The commits were arranged into logical steps afterwards; they are not a
-minute-by-minute record.
+the reviews described in DESIGN.md. The commits were arranged into logical steps
+afterwards; they are not a minute-by-minute record.
 
 ## Project layout
 
